@@ -9,6 +9,7 @@ build/
 app/build/
 captures/
 output/
+/初中语文试讲课/
 *.jks
 *.keystore
 *.apk
