@@ -23,7 +23,6 @@ import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -44,11 +43,14 @@ import com.shangan.teacherprep.data.AnswerTemplate
 import com.shangan.teacherprep.data.AppData
 import com.shangan.teacherprep.data.ScopeConfig
 import com.shangan.teacherprep.ui.FilterChips
+import com.shangan.teacherprep.ui.ImportanceStars
 import com.shangan.teacherprep.ui.MarkdownText
 import com.shangan.teacherprep.ui.ModuleImportEntry
 import com.shangan.teacherprep.ui.PracticeTimer
 import com.shangan.teacherprep.ui.RoundedCard
 import com.shangan.teacherprep.ui.ScreenHeader
+import com.shangan.teacherprep.ui.SectionPanel
+import com.shangan.teacherprep.ui.practiceHistoryText
 import com.shangan.teacherprep.ui.theme.LocalPrepColors
 
 @Composable
@@ -59,15 +61,30 @@ fun StructuredScreen(
     onImport: () -> Unit,
     onToggleFavorite: (String) -> Unit,
     onEdit: (String) -> Unit,
+    onPractice: (String) -> Unit,
+    initialSelectedId: String? = null,
+    drawMode: Boolean = false,
+    onBack: (() -> Unit)? = null,
 ) {
     val scope = data.preferences.selectedScope
-    val config = data.scopeConfigs[scope.key] ?: ScopeConfig()
+    val filterVisibility = data.preferences.filterVisibility
+    val config = data.scopeConfigs[scope.key] ?: com.shangan.teacherprep.data.ScopeDefaults.create(scope)
     var category by remember { mutableStateOf("全部") }
-    var selectedId by remember { mutableStateOf<String?>(null) }
-    val filtered = data.structuredQuestions.filter { it.scopeKey == scope.key && (category == "全部" || it.category == category) }
+    var importance by remember { mutableStateOf("全部") }
+    var selectedId by remember(initialSelectedId) { mutableStateOf(initialSelectedId) }
+    val filtered = data.structuredQuestions.filter {
+        it.scopeKey == scope.key &&
+            (
+                drawMode ||
+                    (
+                        (!filterVisibility.structuredCategory || category == "全部" || it.category == category) &&
+                            (!filterVisibility.structuredImportance || importance == "全部" || it.importance == importance.substringBefore("星").trim().toIntOrNull())
+                    )
+                )
+    }
     val selected = filtered.firstOrNull { it.id == selectedId } ?: filtered.firstOrNull()
 
-    Scaffold { inner ->
+    Scaffold(containerColor = Color(0xFFF8F6FF)) { inner ->
         LazyColumn(
             contentPadding = PaddingValues(
                 top = contentPadding.calculateTopPadding() + inner.calculateTopPadding(),
@@ -75,8 +92,14 @@ fun StructuredScreen(
             ),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            item { ScreenHeader("结构化", scope, onSwitchScope) }
             item {
+                if (drawMode) {
+                    ScreenHeader(title = "结构化抽题", onBack = onBack)
+                } else {
+                    ScreenHeader("结构化", scope, onSwitchScope)
+                }
+            }
+            if (!drawMode) item {
                 ModuleImportEntry(
                     text = "导入结构化问题",
                     onClick = onImport,
@@ -84,8 +107,38 @@ fun StructuredScreen(
                     color = Color(0xFF7654F6),
                 )
             }
-            item { Text("问题种类", Modifier.padding(horizontal = 20.dp), fontWeight = FontWeight.Bold, fontSize = 18.sp) }
-            item { FilterChips(config.structuredTypes, category, { category = it; selectedId = null }) }
+            if (!drawMode && (filterVisibility.structuredCategory || filterVisibility.structuredImportance)) item {
+                SectionPanel(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+                    color = Color(0xFF7654F6),
+                ) {
+                    Text(
+                        "题目筛选",
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        color = Color(0xFF6046D9),
+                        fontWeight = FontWeight.Black,
+                        fontSize = 19.sp,
+                    )
+                    if (filterVisibility.structuredCategory) {
+                        PracticeFilterLabel("问题种类", Color(0xFF6046D9))
+                        FilterChips(
+                            config.structuredTypes,
+                            category,
+                            { category = it; selectedId = null },
+                            horizontalPadding = 16,
+                        )
+                    }
+                    if (filterVisibility.structuredImportance) {
+                        PracticeFilterLabel("重要程度", Color(0xFF6046D9))
+                        FilterChips(
+                            listOf("5 星", "4 星", "3 星", "2 星", "1 星"),
+                            importance,
+                            { importance = it; selectedId = null },
+                            horizontalPadding = 16,
+                        )
+                    }
+                }
+            }
             if (selected != null) {
                 item {
                     Surface(
@@ -106,11 +159,26 @@ fun StructuredScreen(
                                 IconButton(onClick = { onToggleFavorite(selected.id) }) {
                                     Icon(if (selected.favorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder, "收藏", tint = Color.White)
                                 }
-                                IconButton(onClick = { onEdit(selected.id) }) {
-                                    Icon(Icons.Rounded.Edit, "修改结构化问题", tint = Color.White)
+                                if (!drawMode) {
+                                    IconButton(onClick = { onEdit(selected.id) }) {
+                                        Icon(Icons.Rounded.Edit, "修改结构化问题", tint = Color.White)
+                                    }
                                 }
                             }
                             Text(selected.question, color = Color.White, fontWeight = FontWeight.Black, fontSize = 27.sp, lineHeight = 36.sp)
+                            ImportanceStars(
+                                selected.importance,
+                                modifier = Modifier.padding(top = 8.dp),
+                                activeColor = Color(0xFFFFD15C),
+                                inactiveColor = Color.White.copy(alpha = .5f),
+                                iconSize = 22,
+                            )
+                            Text(
+                                practiceHistoryText(selected.practiceCount, selected.lastPracticedAt),
+                                modifier = Modifier.padding(top = 8.dp),
+                                color = Color.White.copy(alpha = .9f),
+                                fontSize = 13.sp,
+                            )
                             Spacer(Modifier.height(18.dp))
                             Surface(
                                 onClick = { selectedId = filtered.filterNot { it.id == selected.id }.randomOrNull()?.id ?: selected.id },
@@ -127,7 +195,10 @@ fun StructuredScreen(
                     }
                 }
                 item {
-                    RoundedCard(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
+                    RoundedCard(
+                        Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+                        containerColor = Color(0xFFFCFAFF),
+                    ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Rounded.Lightbulb, null, tint = Color(0xFF7654F6))
                             Text("  答题思路", fontSize = 20.sp, fontWeight = FontWeight.Black, color = Color(0xFF6046D9))
@@ -148,20 +219,32 @@ fun StructuredScreen(
                 }
                 item {
                     PracticeTimer(
-                        data.preferences.timerMode,
+                        data.preferences,
                         selected.durationMinutes,
                         Modifier.padding(horizontal = 20.dp),
+                        onPracticeStarted = { onPractice(selected.id) },
                     )
                 }
             } else {
                 item { EmptyPracticeState("当前题库还没有结构化问题", onImport) }
             }
-            if (filtered.size > 1) {
+            if (!drawMode && filtered.size > 1) {
                 item { Text("题目列表", Modifier.padding(horizontal = 20.dp), fontSize = 21.sp, fontWeight = FontWeight.Black) }
                 items(filtered) { item ->
-                    RoundedCard(Modifier.fillMaxWidth().padding(horizontal = 20.dp), onClick = { selectedId = item.id }) {
+                    RoundedCard(
+                        Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+                        onClick = { selectedId = item.id },
+                        containerColor = Color(0xFFFCFAFF),
+                    ) {
                         Text(item.category, color = Color(0xFF7654F6), fontWeight = FontWeight.Bold)
                         Text(item.question, modifier = Modifier.padding(top = 6.dp), fontWeight = FontWeight.Bold)
+                        ImportanceStars(item.importance, modifier = Modifier.padding(top = 6.dp), iconSize = 18)
+                        Text(
+                            practiceHistoryText(item.practiceCount, item.lastPracticedAt),
+                            modifier = Modifier.padding(top = 7.dp),
+                            color = Color.Gray,
+                            fontSize = 13.sp,
+                        )
                     }
                 }
             }
@@ -177,19 +260,25 @@ fun TemplateScreen(
     onImport: () -> Unit,
     onToggleFavorite: (String) -> Unit,
     onEdit: (String) -> Unit,
+    onPractice: (String) -> Unit,
+    initialExpandedId: String? = null,
+    focusMode: Boolean = false,
+    onBack: (() -> Unit)? = null,
 ) {
     val scope = data.preferences.selectedScope
-    val config = data.scopeConfigs[scope.key] ?: ScopeConfig()
+    val filterVisibility = data.preferences.filterVisibility
+    val config = data.scopeConfigs[scope.key] ?: com.shangan.teacherprep.data.ScopeDefaults.create(scope)
     var query by remember { mutableStateOf("") }
     var category by remember { mutableStateOf("全部") }
-    var expanded by remember { mutableStateOf<String?>(null) }
+    var expanded by remember(initialExpandedId) { mutableStateOf(initialExpandedId) }
     val filtered = data.templates.filter {
         it.scopeKey == scope.key &&
-            (category == "全部" || it.category == category) &&
-            (query.isBlank() || it.name.contains(query, true) || it.contentMarkdown.contains(query, true))
+            (!focusMode || it.id == initialExpandedId) &&
+            (!filterVisibility.templateCategory || category == "全部" || it.category == category) &&
+            (!filterVisibility.templateSearch || query.isBlank() || it.name.contains(query, true) || it.contentMarkdown.contains(query, true))
     }
 
-    Scaffold { inner ->
+    Scaffold(containerColor = Color(0xFFFFF9F3)) { inner ->
         LazyColumn(
             contentPadding = PaddingValues(
                 top = contentPadding.calculateTopPadding() + inner.calculateTopPadding(),
@@ -197,8 +286,11 @@ fun TemplateScreen(
             ),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            item { ScreenHeader("模板", scope, onSwitchScope) }
             item {
+                if (focusMode) ScreenHeader("模板练习", onBack = onBack)
+                else ScreenHeader("模板", scope, onSwitchScope)
+            }
+            if (!focusMode) item {
                 ModuleImportEntry(
                     text = "导入答题模板",
                     onClick = onImport,
@@ -206,21 +298,43 @@ fun TemplateScreen(
                     color = Color(0xFFFF7C20),
                 )
             }
-            item {
-                OutlinedTextField(
-                    query,
-                    { query = it },
-                    Modifier.fillMaxWidth().padding(horizontal = 20.dp),
-                    placeholder = { Text("搜索模板名称或关键词") },
-                    leadingIcon = { Icon(Icons.Rounded.Search, null) },
-                    shape = RoundedCornerShape(20.dp),
-                    singleLine = true,
-                )
+            if (!focusMode && (filterVisibility.templateSearch || filterVisibility.templateCategory)) item {
+                SectionPanel(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+                    color = Color(0xFFFF7C20),
+                ) {
+                    Text(
+                        "模板筛选",
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        color = Color(0xFFE9650B),
+                        fontWeight = FontWeight.Black,
+                        fontSize = 19.sp,
+                    )
+                    if (filterVisibility.templateSearch) {
+                        OutlinedTextField(
+                            query,
+                            { query = it },
+                            Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                            placeholder = { Text("搜索模板名称或关键词") },
+                            leadingIcon = { Icon(Icons.Rounded.Search, null) },
+                            shape = RoundedCornerShape(18.dp),
+                            singleLine = true,
+                        )
+                    }
+                    if (filterVisibility.templateCategory) {
+                        PracticeFilterLabel("模板种类", Color(0xFFE9650B))
+                        FilterChips(config.templateTypes, category, { category = it }, horizontalPadding = 16)
+                    }
+                }
             }
-            item { FilterChips(config.templateTypes, category, { category = it }) }
-            item {
+            if (!focusMode) item {
                 Surface(
-                    onClick = { expanded = filtered.randomOrNull()?.id },
+                    onClick = {
+                        filtered.randomOrNull()?.let {
+                            expanded = it.id
+                            onPractice(it.id)
+                        }
+                    },
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
                     shape = RoundedCornerShape(24.dp),
                     color = Color(0xFFFFF3E9),
@@ -243,7 +357,14 @@ fun TemplateScreen(
                     TemplateCard(
                         item = item,
                         expanded = expanded == item.id,
-                        onClick = { expanded = if (expanded == item.id) null else item.id },
+                        onClick = {
+                            if (expanded == item.id) {
+                                expanded = null
+                            } else {
+                                expanded = item.id
+                                onPractice(item.id)
+                            }
+                        },
                         onFavorite = { onToggleFavorite(item.id) },
                         onEdit = { onEdit(item.id) },
                     )
@@ -261,7 +382,11 @@ private fun TemplateCard(
     onFavorite: () -> Unit,
     onEdit: () -> Unit,
 ) {
-    RoundedCard(Modifier.fillMaxWidth().padding(horizontal = 20.dp), onClick = onClick) {
+    RoundedCard(
+        Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+        onClick = onClick,
+        containerColor = Color(0xFFFFFDF9),
+    ) {
         Row(verticalAlignment = Alignment.Top) {
             Surface(shape = RoundedCornerShape(14.dp), color = Color(0xFFFFF0E7)) {
                 Text(item.category, color = Color(0xFFFF6F1A), modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp), fontWeight = FontWeight.Bold)
@@ -276,12 +401,28 @@ private fun TemplateCard(
         }
         Text(item.name, fontSize = 21.sp, fontWeight = FontWeight.Black)
         Text(item.summary, color = Color.Gray, modifier = Modifier.padding(top = 5.dp))
+        Text(
+            practiceHistoryText(item.practiceCount, item.lastPracticedAt),
+            color = Color(0xFFFF6F1A),
+            fontSize = 13.sp,
+            modifier = Modifier.padding(top = 7.dp),
+        )
         if (expanded) {
             Surface(color = Color(0xFFFFFAF6), shape = RoundedCornerShape(14.dp), modifier = Modifier.padding(top = 14.dp)) {
                 MarkdownText(item.contentMarkdown, Modifier.padding(14.dp))
             }
         }
     }
+}
+
+@Composable
+private fun PracticeFilterLabel(text: String, color: Color) {
+    Text(
+        text,
+        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 2.dp),
+        fontWeight = FontWeight.Bold,
+        color = color,
+    )
 }
 
 @Composable

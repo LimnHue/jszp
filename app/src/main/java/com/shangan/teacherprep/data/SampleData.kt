@@ -5,8 +5,11 @@ object SampleData {
         val scope = LibraryScope()
         val scopeKey = scope.key
         return AppData(
-            preferences = AppPreferences(selectedScope = scope),
-            scopeConfigs = mapOf(scopeKey to ScopeConfig()),
+            preferences = AppPreferences(
+                selectedScope = scope,
+                hasCompletedLibrarySelection = false,
+            ),
+            scopeConfigs = mapOf(scopeKey to ScopeDefaults.create(scope)),
             trials = listOf(
                 TrialLesson(
                     scopeKey = scopeKey,
@@ -29,7 +32,6 @@ object SampleData {
                         ContentSection("title-3", "品读赏析", "盼望着，盼望着，东风来了，春天的脚步近了。\n\n一切都像刚睡醒的样子，欣欣然张开了眼。"),
                         ContentSection("title-4", "课堂小结", "文章按照盼春、绘春、赞春的思路展开，以细腻笔触写出春天的生机。"),
                     ),
-                    progress = .6f,
                 ),
                 TrialLesson(
                     scopeKey = scopeKey,
@@ -43,7 +45,6 @@ object SampleData {
                         ContentSection(title = "整体感知", markdown = "梳理四次背影，聚焦望父买橘。"),
                     ),
                     durationMinutes = 16,
-                    progress = .45f,
                 ),
                 TrialLesson(
                     scopeKey = scopeKey,
@@ -57,7 +58,6 @@ object SampleData {
                         ContentSection(title = "整体感知", markdown = "疏通文意，概括阴晴两幅画面。"),
                     ),
                     durationMinutes = 20,
-                    progress = .3f,
                 ),
             ),
             structuredQuestions = listOf(

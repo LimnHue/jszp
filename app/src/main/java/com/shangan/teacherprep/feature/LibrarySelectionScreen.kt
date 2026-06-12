@@ -51,10 +51,12 @@ fun LibrarySelectionScreen(
     modifier: Modifier = Modifier,
     onAddStage: (String) -> Unit,
     onAddSubject: (String) -> Unit,
+    onAddTextbookVersion: (String) -> Unit,
     onEnter: (LibraryScope) -> Unit,
 ) {
     var stage by remember { mutableStateOf(data.preferences.selectedScope.stage) }
     var subject by remember { mutableStateOf(data.preferences.selectedScope.subject) }
+    var textbookVersion by remember { mutableStateOf(data.preferences.selectedScope.textbookVersion) }
     var adding by remember { mutableStateOf<String?>(null) }
 
     Column(
@@ -70,7 +72,7 @@ fun LibrarySelectionScreen(
             ) {
                 Icon(Icons.Rounded.MenuBook, contentDescription = null, tint = Color.White)
             }
-            Text("  上岸备课", fontSize = 24.sp, fontWeight = FontWeight.Black)
+            Text("  教招上岸", fontSize = 24.sp, fontWeight = FontWeight.Black)
         }
         Spacer(Modifier.height(26.dp))
         Text("选择你的备考题库", fontSize = 38.sp, lineHeight = 44.sp, fontWeight = FontWeight.Black)
@@ -80,10 +82,18 @@ fun LibrarySelectionScreen(
         SelectionPanel("学段", data.preferences.stages, stage, { stage = it }, { adding = "学段" })
         Spacer(Modifier.height(16.dp))
         SelectionPanel("学科", data.preferences.subjects, subject, { subject = it }, { adding = "学科" })
+        Spacer(Modifier.height(16.dp))
+        SelectionPanel(
+            "教材版本",
+            data.preferences.textbookVersions,
+            textbookVersion,
+            { textbookVersion = it },
+            { adding = "教材版本" },
+        )
         Spacer(Modifier.weight(1f))
         GradientActionButton(
             text = "进入题库",
-            onClick = { onEnter(LibraryScope(stage, subject)) },
+            onClick = { onEnter(LibraryScope(stage, subject, textbookVersion)) },
             modifier = Modifier.fillMaxWidth().padding(bottom = 28.dp),
         )
     }
@@ -96,9 +106,12 @@ fun LibrarySelectionScreen(
                 if (type == "学段") {
                     onAddStage(it)
                     stage = it
-                } else {
+                } else if (type == "学科") {
                     onAddSubject(it)
                     subject = it
+                } else {
+                    onAddTextbookVersion(it)
+                    textbookVersion = it
                 }
                 adding = null
             },
@@ -129,7 +142,7 @@ private fun SelectionPanel(
             }
             LazyVerticalGrid(
                 columns = GridCells.Fixed(3),
-                modifier = Modifier.height(if (values.size > 6) 190.dp else 110.dp),
+                modifier = Modifier.height(if (values.size > 6) 150.dp else 100.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {

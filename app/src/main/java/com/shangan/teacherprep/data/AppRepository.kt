@@ -20,9 +20,10 @@ class AppRepository(private val context: Context) {
 
     suspend fun load(): AppData = withContext(Dispatchers.IO) {
         if (!storeFile.exists()) {
-            SampleData.create().also(::saveBlocking)
+            addBundledTrials(SampleData.create()).also(::saveBlocking)
         } else {
             runCatching { json.decodeFromString<AppData>(storeFile.readText()) }
+                .map(::migrate)
                 .getOrElse { SampleData.create().also(::saveBlocking) }
         }
     }
@@ -33,7 +34,7 @@ class AppRepository(private val context: Context) {
 
     suspend fun exportAll(data: AppData): Uri = withContext(Dispatchers.IO) {
         val exportDir = File(context.cacheDir, "exports").apply { mkdirs() }
-        val file = File(exportDir, "上岸备课_完整备考库.json")
+        val file = File(exportDir, "教招上岸_完整备考库.json")
         file.writeText(json.encodeToString(data))
         FileProvider.getUriForFile(context, "${context.packageName}.files", file)
     }
@@ -47,7 +48,7 @@ class AppRepository(private val context: Context) {
             templates = data.templates.filter { it.scopeKey == scope.key },
         )
         val exportDir = File(context.cacheDir, "exports").apply { mkdirs() }
-        val file = File(exportDir, "上岸备课_${scope.stage}_${scope.subject}.json")
+        val file = File(exportDir, "教招上岸_${scope.stage}_${scope.subject}_${scope.textbookVersion}.json")
         file.writeText(json.encodeToString(scoped))
         FileProvider.getUriForFile(context, "${context.packageName}.files", file)
     }
@@ -71,5 +72,166 @@ class AppRepository(private val context: Context) {
         temp.writeText(json.encodeToString(data))
         if (storeFile.exists()) storeFile.delete()
         temp.renameTo(storeFile)
+    }
+
+    private fun migrate(data: AppData): AppData {
+        val originalVersion = data.schemaVersion
+        var migrated = data
+        if (originalVersion < 2) {
+            // Version 1 always had a selected scope but no onboarding completion flag.
+            migrated = migrated.copy(
+                preferences = migrated.preferences.copy(hasCompletedLibrarySelection = true),
+            )
+        }
+        if (originalVersion < 5) {
+            migrated = migrateTextbookVersions(migrated)
+        }
+        if (originalVersion < 3) {
+            migrated = addBundledTrials(migrated)
+        }
+        if (originalVersion < 4) {
+            migrated = enrichTrialUnits(migrated)
+        }
+        if (originalVersion < 8) {
+            migrated = enrichTrialLessonOrderAndEvents(migrated)
+        }
+        if (originalVersion >= 8) return data
+        return migrated.copy(schemaVersion = 8).also(::saveBlocking)
+    }
+
+    private fun addBundledTrials(data: AppData): AppData {
+        val bundled = context.assets.list(BundledTrialCatalog.ASSET_DIRECTORY)
+            .orEmpty()
+            .filter { it.endsWith(".md", ignoreCase = true) }
+            .flatMap { fileName ->
+                val path = "${BundledTrialCatalog.ASSET_DIRECTORY}/$fileName"
+                val markdown = context.assets.open(path).bufferedReader().use { it.readText() }
+                BundledTrialCatalog.parse(fileName, markdown)
+            }
+            .distinctBy { "${it.scopeKey}::${normalizeTitle(it.title)}" }
+        val existingKeys = data.trials
+            .map { "${it.scopeKey}::${normalizeTitle(it.title)}" }
+            .toSet()
+        val unitsByTitle = bundled.associate { normalizeTitle(it.title) to it.unit }
+        val enrichedExisting = data.trials.map { lesson ->
+            if (lesson.unit.isNotBlank()) lesson
+            else lesson.copy(unit = unitsByTitle[normalizeTitle(lesson.title)] ?: "其他")
+        }
+        val additions = bundled.filter {
+            "${it.scopeKey}::${normalizeTitle(it.title)}" !in existingKeys
+        }
+        val bundledScope = LibraryScope("初中", "语文", "人教版")
+        val scopeKey = bundledScope.key
+        val currentConfig = data.scopeConfigs[scopeKey] ?: ScopeDefaults.create(bundledScope)
+        val bundledTextbooks = bundled.map { it.textbook }
+        val bundledGenres = bundled.map { it.genre }
+        return data.copy(
+            schemaVersion = 8,
+            scopeConfigs = data.scopeConfigs + (
+                scopeKey to currentConfig.copy(
+                    textbooks = (currentConfig.textbooks + bundledTextbooks).distinct(),
+                    units = (currentConfig.units + bundled.map { it.unit }).distinct(),
+                    genres = (currentConfig.genres + bundledGenres).distinct(),
+                )
+            ),
+            trials = enrichedExisting + additions,
+        )
+    }
+
+    private fun normalizeTitle(title: String): String {
+        return title.replace("《", "").replace("》", "").replace(" ", "").trim()
+    }
+
+    private fun enrichTrialUnits(data: AppData): AppData {
+        val bundled = context.assets.list(BundledTrialCatalog.ASSET_DIRECTORY)
+            .orEmpty()
+            .filter { it.endsWith(".md", ignoreCase = true) }
+            .flatMap { fileName ->
+                val path = "${BundledTrialCatalog.ASSET_DIRECTORY}/$fileName"
+                val markdown = context.assets.open(path).bufferedReader().use { it.readText() }
+                BundledTrialCatalog.parse(fileName, markdown)
+            }
+        val unitsByTitle = bundled.associate { normalizeTitle(it.title) to it.unit }
+        val trials = data.trials.map { lesson ->
+            if (lesson.unit.isNotBlank()) lesson
+            else lesson.copy(unit = unitsByTitle[normalizeTitle(lesson.title)] ?: "其他")
+        }
+        return data.copy(
+            schemaVersion = 8,
+            trials = trials,
+            scopeConfigs = data.scopeConfigs.mapValues { (scopeKey, config) ->
+                val scopeUnits = trials.filter { it.scopeKey == scopeKey }.map { it.unit }.filter { it.isNotBlank() }
+                config.copy(units = (config.units + scopeUnits).distinct())
+            },
+        )
+    }
+
+    private fun migrateTextbookVersions(data: AppData): AppData {
+        fun migrateKey(key: String): String {
+            return if (key.split("::").size >= 3) key else "$key::人教版"
+        }
+
+        fun scopeFromKey(key: String): LibraryScope {
+            val parts = migrateKey(key).split("::")
+            return LibraryScope(
+                stage = parts.getOrElse(0) { "初中" },
+                subject = parts.getOrElse(1) { "语文" },
+                textbookVersion = parts.getOrElse(2) { "人教版" },
+            )
+        }
+
+        val configs = data.scopeConfigs.entries.associate { (oldKey, config) ->
+            val newKey = migrateKey(oldKey)
+            val scope = scopeFromKey(newKey)
+            val migratedConfig = if (config == ScopeConfig()) ScopeDefaults.create(scope) else config
+            newKey to migratedConfig
+        }
+        return data.copy(
+            schemaVersion = 8,
+            preferences = data.preferences.copy(
+                selectedScope = data.preferences.selectedScope.copy(
+                    textbookVersion = data.preferences.selectedScope.textbookVersion.ifBlank { "人教版" },
+                ),
+            ),
+            scopeConfigs = configs,
+            trials = data.trials.map { it.copy(scopeKey = migrateKey(it.scopeKey)) },
+            structuredQuestions = data.structuredQuestions.map { it.copy(scopeKey = migrateKey(it.scopeKey)) },
+            templates = data.templates.map { it.copy(scopeKey = migrateKey(it.scopeKey)) },
+        )
+    }
+
+    private fun enrichTrialLessonOrderAndEvents(data: AppData): AppData {
+        val bundled = context.assets.list(BundledTrialCatalog.ASSET_DIRECTORY)
+            .orEmpty()
+            .filter { it.endsWith(".md", ignoreCase = true) }
+            .flatMap { fileName ->
+                val path = "${BundledTrialCatalog.ASSET_DIRECTORY}/$fileName"
+                val markdown = context.assets.open(path).bufferedReader().use { it.readText() }
+                BundledTrialCatalog.parse(fileName, markdown)
+            }
+        val bundledById = bundled.associateBy { it.id }
+        val bundledByTitle = bundled.associateBy { "${it.scopeKey}::${normalizeTitle(it.title)}" }
+        val trials = data.trials.map { lesson ->
+            val bundledLesson = bundledById[lesson.id]
+                ?: bundledByTitle["${lesson.scopeKey}::${normalizeTitle(lesson.title)}"]
+            if (lesson.lessonOrder > 0 || bundledLesson == null) lesson
+            else lesson.copy(
+                lessonOrder = bundledLesson.lessonOrder,
+            )
+        }
+        val events = data.practiceEvents.ifEmpty {
+            buildList {
+                trials.filter { it.lastPracticedAt != null }.forEach {
+                    add(PracticeEvent(scopeKey = it.scopeKey, module = PracticeModule.TRIAL, itemId = it.id, title = it.title, practicedAt = it.lastPracticedAt!!))
+                }
+                data.structuredQuestions.filter { it.lastPracticedAt != null }.forEach {
+                    add(PracticeEvent(scopeKey = it.scopeKey, module = PracticeModule.STRUCTURED, itemId = it.id, title = it.question, practicedAt = it.lastPracticedAt!!))
+                }
+                data.templates.filter { it.lastPracticedAt != null }.forEach {
+                    add(PracticeEvent(scopeKey = it.scopeKey, module = PracticeModule.TEMPLATE, itemId = it.id, title = it.name, practicedAt = it.lastPracticedAt!!))
+                }
+            }
+        }
+        return data.copy(trials = trials, practiceEvents = events)
     }
 }

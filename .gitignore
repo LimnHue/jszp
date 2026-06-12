@@ -10,6 +10,7 @@ app/build/
 captures/
 output/
 /初中语文试讲课/
+/app/src/main/assets/junior_chinese_trials/
 *.jks
 *.keystore
 *.apk

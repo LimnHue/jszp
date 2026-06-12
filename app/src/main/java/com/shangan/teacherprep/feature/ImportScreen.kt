@@ -3,6 +3,7 @@ package com.shangan.teacherprep.feature
 import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -35,6 +36,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.shangan.teacherprep.ImportModule
@@ -43,9 +45,12 @@ import com.shangan.teacherprep.data.ContentSection
 import com.shangan.teacherprep.data.ScopeConfig
 import com.shangan.teacherprep.ui.FilterChips
 import com.shangan.teacherprep.ui.GradientActionButton
+import com.shangan.teacherprep.ui.ImportanceStars
 import com.shangan.teacherprep.ui.RoundedCard
 import com.shangan.teacherprep.ui.ScreenHeader
 import com.shangan.teacherprep.util.DocumentParser
+
+private enum class EditorMode { VISUAL, MARKDOWN }
 
 @Composable
 fun ImportScreen(
@@ -54,36 +59,46 @@ fun ImportScreen(
     data: AppData,
     modifier: Modifier = Modifier,
     onBack: () -> Unit,
-    onAddTrial: (String, String, String, String, List<ContentSection>, String?) -> Unit,
-    onAddStructured: (String, String, List<ContentSection>) -> Unit,
+    onAddTrial: (String, String, String, Int, String, String, List<ContentSection>, String?, Int) -> Unit,
+    onAddStructured: (String, String, List<ContentSection>, Int) -> Unit,
     onAddTemplate: (String, String, String) -> Unit,
-    onUpdateTrial: (String, String, String, String, String, List<ContentSection>, String?) -> Unit,
-    onUpdateStructured: (String, String, String, List<ContentSection>) -> Unit,
+    onUpdateTrial: (String, String, String, String, Int, String, String, List<ContentSection>, String?, Int) -> Unit,
+    onUpdateStructured: (String, String, String, List<ContentSection>, Int) -> Unit,
     onUpdateTemplate: (String, String, String, String) -> Unit,
     onComplete: () -> Unit,
 ) {
     val context = LocalContext.current
-    val config = data.scopeConfigs[data.preferences.selectedScope.key] ?: ScopeConfig()
+    val config = data.scopeConfigs[data.preferences.selectedScope.key]
+        ?: com.shangan.teacherprep.data.ScopeDefaults.create(data.preferences.selectedScope)
     val existingTrial = data.trials.firstOrNull { it.id == editingId }
     val existingStructured = data.structuredQuestions.firstOrNull { it.id == editingId }
     val existingTemplate = data.templates.firstOrNull { it.id == editingId }
     val editing = editingId != null
+    val initialMarkdown = remember(editingId) {
+        when {
+            existingTrial != null -> buildTrialMarkdown(existingTrial)
+            existingStructured != null -> buildSectionMarkdown(existingStructured.answerSections)
+            existingTemplate != null -> existingTemplate.contentMarkdown
+            else -> ""
+        }
+    }
     var title by remember(editingId) {
         mutableStateOf(existingTrial?.title ?: existingStructured?.question ?: existingTemplate?.name.orEmpty())
     }
-    var markdown by remember(editingId) {
-        mutableStateOf(
-            when {
-                existingTrial != null -> buildTrialMarkdown(existingTrial)
-                existingStructured != null -> buildSectionMarkdown(existingStructured.answerSections)
-                existingTemplate != null -> existingTemplate.contentMarkdown
-                else -> ""
-            },
-        )
+    var markdown by remember(editingId) { mutableStateOf(initialMarkdown) }
+    var editorMode by remember(editingId) { mutableStateOf(EditorMode.VISUAL) }
+    var visualSections by remember(editingId) {
+        mutableStateOf(VisualEditorCodec.parse(initialMarkdown, defaultSectionTitle(module, config)))
     }
     var fileName by remember { mutableStateOf<String?>(null) }
     var textbook by remember(editingId) {
         mutableStateOf(existingTrial?.textbook ?: config.textbooks.firstOrNull().orEmpty())
+    }
+    var unit by remember(editingId) {
+        mutableStateOf(existingTrial?.unit?.ifBlank { null } ?: config.units.firstOrNull().orEmpty())
+    }
+    var lessonOrder by remember(editingId) {
+        mutableStateOf(existingTrial?.lessonOrder?.takeIf { it > 0 }?.toString().orEmpty())
     }
     var category by remember(editingId) {
         mutableStateOf(
@@ -95,6 +110,9 @@ fun ImportScreen(
         )
     }
     var boardUri by remember(editingId) { mutableStateOf(existingTrial?.boardImageUri) }
+    var importance by remember(editingId) {
+        mutableStateOf(existingTrial?.importance ?: existingStructured?.importance ?: 3)
+    }
 
     val documentPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let {
@@ -107,6 +125,7 @@ fun ImportScreen(
             } ?: "导入文档"
             fileName = name
             markdown = runCatching { DocumentParser.readText(context.contentResolver, it, name) }.getOrElse { "读取失败：${it.message}" }
+            visualSections = VisualEditorCodec.parse(markdown, defaultSectionTitle(module, config))
             if (title.isBlank()) title = name.substringBeforeLast('.')
         }
     }
@@ -119,7 +138,7 @@ fun ImportScreen(
         }
     }
 
-    Column(modifier.fillMaxSize()) {
+    Column(modifier.fillMaxSize().background(MaterialTheme.colorScheme.primary.copy(alpha = .025f))) {
         ScreenHeader(if (editing) "修改内容" else "导入内容", onBack = onBack)
         Column(
             Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
@@ -131,12 +150,13 @@ fun ImportScreen(
                 fontSize = 17.sp,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                ImportMethodCard("Markdown / 文档", Icons.Rounded.Description, fileName != null, Modifier.weight(1f)) {
+                ImportMethodCard("导入文档", Icons.Rounded.Description, fileName != null, Modifier.weight(1f)) {
                     documentPicker.launch(arrayOf("text/markdown", "text/plain", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"))
                 }
                 ImportMethodCard("手动新建", Icons.Rounded.Edit, fileName == null, Modifier.weight(1f)) {
                     fileName = null
                     markdown = ""
+                    visualSections = listOf(VisualSection(title = defaultSectionTitle(module, config)))
                 }
             }
             fileName?.let {
@@ -157,6 +177,17 @@ fun ImportScreen(
             if (module == ImportModule.TRIAL) {
                 Text("教材", fontWeight = FontWeight.Bold)
                 FilterChips(config.textbooks, textbook, { textbook = it }, includeAll = false)
+                Text("单元", fontWeight = FontWeight.Bold)
+                FilterChips(config.units, unit, { unit = it }, includeAll = false)
+                OutlinedTextField(
+                    value = lessonOrder,
+                    onValueChange = { value -> lessonOrder = value.filter(Char::isDigit).take(3) },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("课时序号（例如：1）") },
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    shape = RoundedCornerShape(16.dp),
+                )
                 Text("题材", fontWeight = FontWeight.Bold)
                 FilterChips(config.genres, category, { category = it }, includeAll = false)
             } else {
@@ -168,14 +199,53 @@ fun ImportScreen(
                     includeAll = false,
                 )
             }
-            OutlinedTextField(
-                markdown,
-                { markdown = it },
-                Modifier.fillMaxWidth().height(260.dp),
-                label = { Text("Markdown / 正文") },
-                placeholder = { Text("# 导入新课\n...\n# 整体感知\n...\n\n系统会按标题自动切分内容结构") },
-                shape = RoundedCornerShape(16.dp),
-            )
+            if (module == ImportModule.TRIAL || module == ImportModule.STRUCTURED) {
+                Text("重要程度", fontWeight = FontWeight.Bold)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    ImportanceStars(
+                        value = importance,
+                        onValueChange = { importance = it },
+                        iconSize = 34,
+                    )
+                    Text("  $importance 星", color = Color.Gray, fontWeight = FontWeight.Bold)
+                }
+            }
+            Text("正文编辑", fontWeight = FontWeight.Bold)
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                EditorModeCard(
+                    title = "分段编辑",
+                    selected = editorMode == EditorMode.VISUAL,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    if (editorMode != EditorMode.VISUAL) {
+                        visualSections = VisualEditorCodec.parse(markdown, defaultSectionTitle(module, config))
+                        editorMode = EditorMode.VISUAL
+                    }
+                }
+                EditorModeCard(
+                    title = "文本编辑",
+                    selected = editorMode == EditorMode.MARKDOWN,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    if (editorMode != EditorMode.MARKDOWN) {
+                        markdown = VisualEditorCodec.toMarkdown(visualSections)
+                        editorMode = EditorMode.MARKDOWN
+                    }
+                }
+            }
+            if (editorMode == EditorMode.VISUAL) {
+                Text("按章节和层级直接填写，适合日常新增与修改。", color = Color.Gray, fontSize = 12.sp)
+                VisualContentEditor(visualSections, onChange = { visualSections = it })
+            } else {
+                OutlinedTextField(
+                    markdown,
+                    { markdown = it },
+                    Modifier.fillMaxWidth().height(300.dp),
+                    label = { Text("文本内容") },
+                    placeholder = { Text("# 导入新课\n- 一级要点\n    - 二级要点") },
+                    shape = RoundedCornerShape(16.dp),
+                )
+            }
             if (module == ImportModule.TRIAL) {
                 Surface(
                     onClick = { imagePicker.launch(arrayOf("image/png", "image/jpeg", "image/webp")) },
@@ -195,37 +265,52 @@ fun ImportScreen(
                 text = if (editing) "保存修改" else "开始导入",
                 modifier = Modifier.fillMaxWidth(),
                 onClick = {
+                    val effectiveMarkdown = if (editorMode == EditorMode.VISUAL) {
+                        VisualEditorCodec.toMarkdown(visualSections)
+                    } else {
+                        markdown
+                    }
                     when (module) {
                         ImportModule.TRIAL -> {
-                            val parsed = DocumentParser.splitMarkdown(markdown, listOf("课程信息") + config.trialSectionNames)
+                            val parsed = DocumentParser.splitMarkdown(effectiveMarkdown, listOf("课程信息") + config.trialSectionNames)
                             val courseTitles = setOf("课程信息", "教学目标", "教学重点", "教学难点")
                             val courseParts = parsed.filter { section ->
                                 courseTitles.any { section.title.contains(it) }
                             }
                             val body = parsed.filterNot { it in courseParts }.ifEmpty {
-                                listOf(ContentSection(title = config.trialSectionNames.firstOrNull() ?: "正文", markdown = markdown))
+                                listOf(ContentSection(title = config.trialSectionNames.firstOrNull() ?: "正文", markdown = effectiveMarkdown))
                             }
                             val courseInfo = courseParts.joinToString("\n\n") { "# ${it.title}\n${it.markdown}" }
-                                .ifBlank { "# 课程信息\n$title\n\n- 教材：$textbook\n- 题材：$category" }
+                                .ifBlank {
+                                    buildString {
+                                        appendLine("# 课程信息")
+                                        appendLine(title)
+                                        appendLine()
+                                        appendLine("- 教材：$textbook")
+                                        appendLine("- 单元：$unit")
+                                        lessonOrder.toIntOrNull()?.takeIf { it > 0 }?.let { appendLine("- 课时：第${it}课") }
+                                        appendLine("- 题材：$category")
+                                    }.trim()
+                                }
                             if (editingId == null) {
-                                onAddTrial(title, textbook, category, courseInfo, body, boardUri)
+                                onAddTrial(title, textbook, unit, lessonOrder.toIntOrNull() ?: 0, category, courseInfo, body, boardUri, importance)
                             } else {
-                                onUpdateTrial(editingId, title, textbook, category, courseInfo, body, boardUri)
+                                onUpdateTrial(editingId, title, textbook, unit, lessonOrder.toIntOrNull() ?: 0, category, courseInfo, body, boardUri, importance)
                             }
                         }
                         ImportModule.STRUCTURED -> {
-                            val sections = DocumentParser.splitMarkdown(markdown, config.structuredSectionNames)
+                            val sections = DocumentParser.splitMarkdown(effectiveMarkdown, config.structuredSectionNames)
                             if (editingId == null) {
-                                onAddStructured(category, title, sections)
+                                onAddStructured(category, title, sections, importance)
                             } else {
-                                onUpdateStructured(editingId, category, title, sections)
+                                onUpdateStructured(editingId, category, title, sections, importance)
                             }
                         }
                         ImportModule.TEMPLATE -> {
                             if (editingId == null) {
-                                onAddTemplate(category, title, markdown)
+                                onAddTemplate(category, title, effectiveMarkdown)
                             } else {
-                                onUpdateTemplate(editingId, category, title, markdown)
+                                onUpdateTemplate(editingId, category, title, effectiveMarkdown)
                             }
                         }
                         ImportModule.BACKUP -> Unit
@@ -234,12 +319,30 @@ fun ImportScreen(
                 },
             )
             Text(
-                "支持 .md、.txt、.docx；一级到六级标题会自动切分为可维护的内容段落。",
+                "默认使用分段编辑，也可切换到文本编辑进行批量排版。支持 .md、.txt、.docx。",
                 color = Color.Gray,
                 fontSize = 12.sp,
                 modifier = Modifier.padding(bottom = 30.dp),
             )
         }
+    }
+}
+
+@Composable
+private fun EditorModeCard(
+    title: String,
+    selected: Boolean,
+    modifier: Modifier,
+    onClick: () -> Unit,
+) {
+    Surface(
+        onClick = onClick,
+        modifier = modifier,
+        shape = RoundedCornerShape(15.dp),
+        color = if (selected) MaterialTheme.colorScheme.primary else Color(0xFFF5F4F5),
+        contentColor = if (selected) Color.White else Color(0xFF55565D),
+    ) {
+        Text(title, modifier = Modifier.padding(vertical = 12.dp), fontWeight = FontWeight.Bold, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
     }
 }
 
@@ -281,4 +384,11 @@ private fun buildTrialMarkdown(lesson: com.shangan.teacherprep.data.TrialLesson)
         lesson.courseInfoMarkdown,
         buildSectionMarkdown(lesson.bodySections),
     ).filter { it.isNotBlank() }.joinToString("\n\n")
+}
+
+private fun defaultSectionTitle(module: ImportModule, config: ScopeConfig): String = when (module) {
+    ImportModule.TRIAL -> config.trialSectionNames.firstOrNull() ?: "导入新课"
+    ImportModule.STRUCTURED -> config.structuredSectionNames.firstOrNull() ?: "答题思路"
+    ImportModule.TEMPLATE -> "模板正文"
+    ImportModule.BACKUP -> "正文"
 }

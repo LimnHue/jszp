@@ -17,12 +17,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ChatBubbleOutline
+import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.Layers
-import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material.icons.rounded.Slideshow
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -38,7 +37,9 @@ import com.shangan.teacherprep.data.AppData
 import com.shangan.teacherprep.ui.MainDestination
 import com.shangan.teacherprep.ui.RoundedCard
 import com.shangan.teacherprep.ui.ScopePill
+import com.shangan.teacherprep.ui.practiceHistoryText
 import com.shangan.teacherprep.ui.theme.LocalPrepColors
+import java.time.LocalTime
 
 @Composable
 fun HomeScreen(
@@ -47,12 +48,49 @@ fun HomeScreen(
     onNavigate: (MainDestination) -> Unit,
     onSwitchScope: () -> Unit,
     onRandomTrial: () -> Unit,
+    onRandomStructured: () -> Unit,
+    onOpenCalendar: () -> Unit,
 ) {
     val scope = data.preferences.selectedScope
     val key = scope.key
     val trials = data.trials.filter { it.scopeKey == key }
     val structured = data.structuredQuestions.filter { it.scopeKey == key }
     val templates = data.templates.filter { it.scopeKey == key }
+    val recentPractices = (
+        trials.map {
+            RecentPractice(
+                title = it.title,
+                subtitle = "试讲 · ${it.textbook} · ${it.genre}",
+                practiceCount = it.practiceCount,
+                lastPracticedAt = it.lastPracticedAt,
+                destination = MainDestination.TRIAL,
+                icon = Icons.Rounded.Slideshow,
+                color = LocalPrepColors.current.primary,
+            )
+        } + structured.map {
+            RecentPractice(
+                title = it.question,
+                subtitle = "结构化 · ${it.category}",
+                practiceCount = it.practiceCount,
+                lastPracticedAt = it.lastPracticedAt,
+                destination = MainDestination.STRUCTURED,
+                icon = Icons.Rounded.ChatBubbleOutline,
+                color = Color(0xFF7654F6),
+            )
+        } + templates.map {
+            RecentPractice(
+                title = it.name,
+                subtitle = "模板 · ${it.category}",
+                practiceCount = it.practiceCount,
+                lastPracticedAt = it.lastPracticedAt,
+                destination = MainDestination.TEMPLATE,
+                icon = Icons.Rounded.Layers,
+                color = Color(0xFFFF9418),
+            )
+        }
+    ).filter { it.lastPracticedAt != null }
+        .sortedByDescending { it.lastPracticedAt }
+        .take(5)
 
     LazyColumn(
         contentPadding = PaddingValues(
@@ -66,7 +104,7 @@ fun HomeScreen(
         item {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
                 Column(Modifier.weight(1f)) {
-                    Text("上午好", fontSize = 38.sp, fontWeight = FontWeight.Black)
+                    Text(greetingForHour(LocalTime.now().hour), fontSize = 38.sp, fontWeight = FontWeight.Black)
                     Text("今天想练什么？", color = Color.Gray, fontSize = 18.sp)
                 }
                 ScopePill(scope, onSwitchScope)
@@ -74,7 +112,6 @@ fun HomeScreen(
         }
         item {
             Surface(
-                onClick = onRandomTrial,
                 shape = RoundedCornerShape(26.dp),
                 shadowElevation = 8.dp,
                 color = Color.Transparent,
@@ -85,12 +122,28 @@ fun HomeScreen(
                 ) {
                     Column(Modifier.padding(24.dp)) {
                         Text("今日练习", color = Color.White, fontSize = 29.sp, fontWeight = FontWeight.Black)
-                        Text("随机抽一道，开始模拟", color = Color.White.copy(alpha = .9f), fontSize = 17.sp)
+                        Text("选择一种题型，开始模拟", color = Color.White.copy(alpha = .9f), fontSize = 17.sp)
                         Spacer(Modifier.height(28.dp))
-                        Surface(shape = RoundedCornerShape(50), color = Color.White) {
-                            Row(Modifier.padding(horizontal = 18.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Rounded.PlayArrow, null, tint = LocalPrepColors.current.primary)
-                                Text("开始抽题", color = LocalPrepColors.current.primary, fontWeight = FontWeight.Bold)
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Surface(
+                                onClick = onRandomTrial,
+                                shape = RoundedCornerShape(50),
+                                color = Color.White,
+                            ) {
+                                Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Rounded.Slideshow, null, tint = LocalPrepColors.current.primary)
+                                    Text(" 抽试讲", color = LocalPrepColors.current.primary, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                            Surface(
+                                onClick = onRandomStructured,
+                                shape = RoundedCornerShape(50),
+                                color = Color.White,
+                            ) {
+                                Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Rounded.ChatBubbleOutline, null, tint = Color(0xFF7654F6))
+                                    Text(" 抽结构化", color = Color(0xFF7654F6), fontWeight = FontWeight.Bold)
+                                }
                             }
                         }
                     }
@@ -116,27 +169,67 @@ fun HomeScreen(
                 }
             }
         }
-        item { Text("最近练习", fontSize = 23.sp, fontWeight = FontWeight.Black) }
-        items(minOf(trials.size, 3)) { index ->
-            val item = trials[index]
-            RoundedCard(onClick = { onNavigate(MainDestination.TRIAL) }) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        Modifier.size(58.dp).background(LocalPrepColors.current.primary.copy(alpha = .1f), RoundedCornerShape(16.dp)),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(Icons.Rounded.Slideshow, null, tint = LocalPrepColors.current.primary)
+        item {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("最近练习", fontSize = 23.sp, fontWeight = FontWeight.Black, modifier = Modifier.weight(1f))
+                Surface(onClick = onOpenCalendar, shape = RoundedCornerShape(50), color = LocalPrepColors.current.primary.copy(alpha = .1f)) {
+                    Row(Modifier.padding(horizontal = 13.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Rounded.CalendarMonth, null, tint = LocalPrepColors.current.primary, modifier = Modifier.size(18.dp))
+                        Text(" 日历", color = LocalPrepColors.current.primary, fontWeight = FontWeight.Bold)
                     }
-                    Column(Modifier.padding(start = 14.dp).weight(1f)) {
-                        Text(item.title, fontWeight = FontWeight.Bold, fontSize = 17.sp)
-                        Text("${item.textbook} · ${item.genre}", color = Color.Gray, fontSize = 13.sp)
+                }
+            }
+        }
+        if (recentPractices.isEmpty()) {
+            item {
+                RoundedCard(containerColor = Color(0xFFF7F8FB)) {
+                    Text("还没有练习记录，开始一次计时练习后会显示在这里。", color = Color.Gray)
+                }
+            }
+        } else {
+            items(recentPractices) { item ->
+                RoundedCard(onClick = { onNavigate(item.destination) }) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            Modifier.size(58.dp).background(item.color.copy(alpha = .1f), RoundedCornerShape(16.dp)),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(item.icon, null, tint = item.color)
+                        }
+                        Column(Modifier.padding(start = 14.dp).weight(1f)) {
+                            Text(item.title, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                            Text(item.subtitle, color = Color.Gray, fontSize = 13.sp)
+                            Text(
+                                practiceHistoryText(item.practiceCount, item.lastPracticedAt),
+                                color = item.color,
+                                fontSize = 12.sp,
+                                modifier = Modifier.padding(top = 4.dp),
+                            )
+                        }
                     }
-                    Text("${(item.progress * 100).toInt()}%", color = LocalPrepColors.current.primary, fontWeight = FontWeight.Bold)
                 }
             }
         }
     }
 }
+
+internal fun greetingForHour(hour: Int): String = when (hour) {
+    in 5..10 -> "上午好"
+    in 11..12 -> "中午好"
+    in 13..17 -> "下午好"
+    in 18..23 -> "晚上好"
+    else -> "夜深了"
+}
+
+private data class RecentPractice(
+    val title: String,
+    val subtitle: String,
+    val practiceCount: Int,
+    val lastPracticedAt: Long?,
+    val destination: MainDestination,
+    val icon: ImageVector,
+    val color: Color,
+)
 
 @Composable
 private fun ModuleCard(
