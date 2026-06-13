@@ -2,10 +2,14 @@ package com.shangan.teacherprep.ui.theme
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.lightColorScheme
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
 import com.shangan.teacherprep.data.PaletteStyle
 
 @Immutable
@@ -45,10 +49,23 @@ fun TeacherPrepTheme(
         onBackground = Color(0xFF17171C),
         onSurface = Color(0xFF17171C),
     )
-    androidx.compose.runtime.CompositionLocalProvider(
-        LocalPrepColors provides prep,
-        LocalSurfaceOpacity provides surfaceOpacity,
-    ) {
-        MaterialTheme(colorScheme = scheme, content = content)
+    val systemDensity = LocalDensity.current
+    BoxWithConstraints {
+        val scale = when {
+            maxWidth < 360.dp -> 0.80f
+            maxWidth < 430.dp -> 0.83f
+            maxWidth < 600.dp -> 0.87f
+            else -> 0.92f
+        }
+        androidx.compose.runtime.CompositionLocalProvider(
+            LocalPrepColors provides prep,
+            LocalSurfaceOpacity provides surfaceOpacity,
+            LocalDensity provides Density(
+                density = systemDensity.density * scale,
+                fontScale = systemDensity.fontScale.coerceAtMost(1f) * scale,
+            ),
+        ) {
+            MaterialTheme(colorScheme = scheme, content = content)
+        }
     }
 }

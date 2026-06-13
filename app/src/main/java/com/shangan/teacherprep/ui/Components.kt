@@ -4,9 +4,15 @@ import android.media.MediaPlayer
 import android.speech.tts.TextToSpeech
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
@@ -17,6 +23,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -50,11 +58,14 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -62,7 +73,12 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -72,7 +88,9 @@ import com.shangan.teacherprep.data.TimerMode
 import com.shangan.teacherprep.ui.theme.LocalPrepColors
 import com.shangan.teacherprep.ui.theme.LocalSurfaceOpacity
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.util.Locale
+import kotlin.math.roundToInt
 
 enum class MainDestination(val label: String, val icon: ImageVector) {
     HOME("首页", Icons.Rounded.Home),
@@ -111,7 +129,7 @@ fun ScreenHeader(
     action: (@Composable () -> Unit)? = null,
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (onBack != null) {
@@ -127,6 +145,122 @@ fun ScreenHeader(
             ScopePill(scope, onScopeClick)
         }
         action?.invoke()
+    }
+}
+
+fun Modifier.observeHorizontalSwipe(
+    thresholdPx: Float = 120f,
+    onSwipeLeft: (() -> Unit)? = null,
+    onSwipeRight: (() -> Unit)? = null,
+): Modifier = pointerInput(onSwipeLeft, onSwipeRight, thresholdPx) {
+    awaitEachGesture {
+        val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+        var distance = 0f
+        do {
+            val event = awaitPointerEvent(PointerEventPass.Initial)
+            val change = event.changes.firstOrNull { it.id == down.id } ?: break
+            distance += change.positionChange().x
+            when {
+                distance <= -thresholdPx && onSwipeLeft != null -> {
+                    onSwipeLeft()
+                    break
+                }
+                distance >= thresholdPx && onSwipeRight != null -> {
+                    onSwipeRight()
+                    break
+                }
+            }
+        } while (event.changes.any { it.pressed })
+    }
+}
+
+@Composable
+fun BoxScope.DraggableScrollToTopButton(
+    listState: LazyListState,
+    modifier: Modifier = Modifier,
+) {
+    val visible by remember(listState) {
+        derivedStateOf {
+            listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 64
+        }
+    }
+    val scope = rememberCoroutineScope()
+    DraggableUpButton(
+        visible = visible,
+        modifier = modifier,
+        onClick = { scope.launch { listState.animateScrollToItem(0) } },
+    )
+}
+
+@Composable
+fun BoxScope.DraggableScrollToTopButton(
+    scrollState: ScrollState,
+    modifier: Modifier = Modifier,
+) {
+    val scope = rememberCoroutineScope()
+    DraggableUpButton(
+        visible = scrollState.value > 64,
+        modifier = modifier,
+        onClick = { scope.launch { scrollState.animateScrollTo(0) } },
+    )
+}
+
+@Composable
+private fun BoxScope.DraggableUpButton(
+    visible: Boolean,
+    modifier: Modifier,
+    onClick: () -> Unit,
+) {
+    if (!visible) return
+
+    val density = LocalDensity.current
+    val maxLeft = with(density) { -260.dp.toPx() }
+    val maxUp = with(density) { -480.dp.toPx() }
+    var dragX by remember { mutableFloatStateOf(0f) }
+    var dragY by remember { mutableFloatStateOf(0f) }
+
+    Surface(
+        onClick = onClick,
+        modifier = modifier
+            .align(Alignment.BottomEnd)
+            .offset { androidx.compose.ui.unit.IntOffset(dragX.roundToInt(), dragY.roundToInt()) }
+            .padding(14.dp)
+            .size(50.dp)
+            .shadow(9.dp, CircleShape)
+            .pointerInput(Unit) {
+                detectDragGestures { change, dragAmount ->
+                    change.consume()
+                    dragX = (dragX + dragAmount.x).coerceIn(maxLeft, 0f)
+                    dragY = (dragY + dragAmount.y).coerceIn(maxUp, 0f)
+                }
+            },
+        shape = CircleShape,
+        color = Color.Transparent,
+    ) {
+        Box(
+            Modifier.background(
+                Brush.radialGradient(
+                    listOf(LocalPrepColors.current.secondary, LocalPrepColors.current.primary),
+                ),
+                CircleShape,
+            ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Canvas(Modifier.size(28.dp)) {
+                val stroke = 3.dp.toPx()
+                drawLine(Color.White, Offset(size.width * .25f, size.height * .47f), Offset(size.width * .5f, size.height * .22f), stroke)
+                drawLine(Color.White, Offset(size.width * .5f, size.height * .22f), Offset(size.width * .75f, size.height * .47f), stroke)
+                drawLine(Color.White.copy(alpha = .72f), Offset(size.width * .25f, size.height * .67f), Offset(size.width * .5f, size.height * .42f), stroke)
+                drawLine(Color.White.copy(alpha = .72f), Offset(size.width * .5f, size.height * .42f), Offset(size.width * .75f, size.height * .67f), stroke)
+            }
+            Text(
+                "UP",
+                color = Color.White,
+                fontSize = 8.sp,
+                fontWeight = FontWeight.Black,
+                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 5.dp),
+            )
+        }
     }
 }
 
@@ -258,11 +392,12 @@ fun RoundedCard(
 ) {
     Card(
         modifier = modifier.animateContentSize().then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
-        shape = RoundedCornerShape(22.dp),
+        shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(containerColor = containerColor),
-        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE9E7EA)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
     ) {
-        Column(modifier = Modifier.padding(18.dp), content = content)
+        Column(modifier = Modifier.padding(16.dp), content = content)
     }
 }
 

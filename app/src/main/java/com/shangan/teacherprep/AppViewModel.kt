@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.io.File
 
 data class AppUiState(
     val loading: Boolean = true,
@@ -300,10 +301,100 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun addTrialMedia(id: String, type: PracticeMediaType, filePath: String) = update { data ->
-        val media = PracticeMedia(type = type, filePath = filePath)
+        val lesson = data.trials.firstOrNull { it.id == id } ?: return@update data
+        val media = createPracticeMedia(lesson.practiceMedia, type, filePath)
         data.copy(
             trials = data.trials.map {
                 if (it.id == id) it.copy(practiceMedia = it.practiceMedia + media) else it
+            },
+        )
+    }
+
+    fun addStructuredMedia(id: String, type: PracticeMediaType, filePath: String) = update { data ->
+        val question = data.structuredQuestions.firstOrNull { it.id == id } ?: return@update data
+        val media = createPracticeMedia(question.practiceMedia, type, filePath)
+        data.copy(
+            structuredQuestions = data.structuredQuestions.map {
+                if (it.id == id) it.copy(practiceMedia = it.practiceMedia + media) else it
+            },
+        )
+    }
+
+    fun addTemplateMedia(id: String, type: PracticeMediaType, filePath: String) = update { data ->
+        val template = data.templates.firstOrNull { it.id == id } ?: return@update data
+        val media = createPracticeMedia(template.practiceMedia, type, filePath)
+        data.copy(
+            templates = data.templates.map {
+                if (it.id == id) it.copy(practiceMedia = it.practiceMedia + media) else it
+            },
+        )
+    }
+
+    fun deleteTrialMedia(trialId: String, mediaId: String) = update { data ->
+        val lesson = data.trials.firstOrNull { it.id == trialId } ?: return@update data
+        val media = lesson.practiceMedia.firstOrNull { it.id == mediaId } ?: return@update data
+        deletePracticeMediaFile(media.filePath)
+        data.copy(
+            trials = data.trials.map {
+                if (it.id == trialId) {
+                    it.copy(practiceMedia = it.practiceMedia.filterNot { item -> item.id == mediaId })
+                } else {
+                    it
+                }
+            },
+        )
+    }
+
+    fun deleteStructuredMedia(questionId: String, mediaId: String) = update { data ->
+        val question = data.structuredQuestions.firstOrNull { it.id == questionId } ?: return@update data
+        val media = question.practiceMedia.firstOrNull { it.id == mediaId } ?: return@update data
+        deletePracticeMediaFile(media.filePath)
+        data.copy(
+            structuredQuestions = data.structuredQuestions.map {
+                if (it.id == questionId) {
+                    it.copy(practiceMedia = it.practiceMedia.filterNot { item -> item.id == mediaId })
+                } else {
+                    it
+                }
+            },
+        )
+    }
+
+    fun deleteTemplateMedia(templateId: String, mediaId: String) = update { data ->
+        val template = data.templates.firstOrNull { it.id == templateId } ?: return@update data
+        val media = template.practiceMedia.firstOrNull { it.id == mediaId } ?: return@update data
+        deletePracticeMediaFile(media.filePath)
+        data.copy(
+            templates = data.templates.map {
+                if (it.id == templateId) {
+                    it.copy(practiceMedia = it.practiceMedia.filterNot { item -> item.id == mediaId })
+                } else {
+                    it
+                }
+            },
+        )
+    }
+
+    fun renameTrialMedia(trialId: String, mediaId: String, name: String) = update { data ->
+        data.copy(
+            trials = data.trials.map {
+                if (it.id == trialId) it.copy(practiceMedia = renameMedia(it.practiceMedia, mediaId, name)) else it
+            },
+        )
+    }
+
+    fun renameStructuredMedia(questionId: String, mediaId: String, name: String) = update { data ->
+        data.copy(
+            structuredQuestions = data.structuredQuestions.map {
+                if (it.id == questionId) it.copy(practiceMedia = renameMedia(it.practiceMedia, mediaId, name)) else it
+            },
+        )
+    }
+
+    fun renameTemplateMedia(templateId: String, mediaId: String, name: String) = update { data ->
+        data.copy(
+            templates = data.templates.map {
+                if (it.id == templateId) it.copy(practiceMedia = renameMedia(it.practiceMedia, mediaId, name)) else it
             },
         )
     }
@@ -333,6 +424,21 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun exportTrial(id: String, onReady: (Uri) -> Unit) {
+        val lesson = _uiState.value.data.trials.firstOrNull { it.id == id } ?: return
+        exportMarkdown({ repository.exportTrialMarkdown(lesson) }, onReady)
+    }
+
+    fun exportStructured(id: String, onReady: (Uri) -> Unit) {
+        val question = _uiState.value.data.structuredQuestions.firstOrNull { it.id == id } ?: return
+        exportMarkdown({ repository.exportStructuredMarkdown(question) }, onReady)
+    }
+
+    fun exportTemplate(id: String, onReady: (Uri) -> Unit) {
+        val template = _uiState.value.data.templates.firstOrNull { it.id == id } ?: return
+        exportMarkdown({ repository.exportTemplateMarkdown(template) }, onReady)
+    }
+
     fun clearMessage() {
         _uiState.value = _uiState.value.copy(message = null)
     }
@@ -341,5 +447,44 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         val updated = transform(_uiState.value.data)
         _uiState.value = _uiState.value.copy(data = updated)
         viewModelScope.launch { repository.save(updated) }
+    }
+
+    private fun exportMarkdown(exporter: suspend () -> Uri, onReady: (Uri) -> Unit) {
+        viewModelScope.launch {
+            runCatching { exporter() }
+                .onSuccess(onReady)
+                .onFailure { _uiState.value = _uiState.value.copy(message = "导出失败：${it.message}") }
+        }
+    }
+
+    private fun deletePracticeMediaFile(filePath: String) {
+        val mediaDirectory = File(getApplication<Application>().filesDir, "practice_media").canonicalFile
+        val file = File(filePath).canonicalFile
+        if (file.path.startsWith(mediaDirectory.path + File.separator)) {
+            runCatching { file.delete() }
+        }
+    }
+
+    private fun createPracticeMedia(
+        existingMedia: List<PracticeMedia>,
+        type: PracticeMediaType,
+        filePath: String,
+    ): PracticeMedia {
+        val existing = existingMedia.filter { it.type == type }
+        val nextAttemptNumber = maxOf(
+            existing.size,
+            existing.maxOfOrNull { it.attemptNumber } ?: 0,
+        ) + 1
+        return PracticeMedia(
+            type = type,
+            filePath = filePath,
+            attemptNumber = nextAttemptNumber,
+        )
+    }
+
+    private fun renameMedia(mediaItems: List<PracticeMedia>, mediaId: String, name: String): List<PracticeMedia> {
+        val cleaned = name.trim().take(50)
+        if (cleaned.isBlank()) return mediaItems
+        return mediaItems.map { if (it.id == mediaId) it.copy(displayName = cleaned) else it }
     }
 }

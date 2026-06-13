@@ -8,11 +8,13 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -25,6 +27,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -35,6 +41,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.shangan.teacherprep.data.AppData
 import com.shangan.teacherprep.ui.MainDestination
+import com.shangan.teacherprep.ui.DraggableScrollToTopButton
+import com.shangan.teacherprep.ui.RandomDrawCandidate
+import com.shangan.teacherprep.ui.RandomDrawDialog
+import com.shangan.teacherprep.ui.RandomDrawGroup
 import com.shangan.teacherprep.ui.RoundedCard
 import com.shangan.teacherprep.ui.ScopePill
 import com.shangan.teacherprep.ui.practiceHistoryText
@@ -47,8 +57,8 @@ fun HomeScreen(
     contentPadding: PaddingValues,
     onNavigate: (MainDestination) -> Unit,
     onSwitchScope: () -> Unit,
-    onRandomTrial: () -> Unit,
-    onRandomStructured: () -> Unit,
+    onRandomTrial: (String) -> Unit,
+    onRandomStructured: (String) -> Unit,
     onOpenCalendar: () -> Unit,
 ) {
     val scope = data.preferences.selectedScope
@@ -56,6 +66,7 @@ fun HomeScreen(
     val trials = data.trials.filter { it.scopeKey == key }
     val structured = data.structuredQuestions.filter { it.scopeKey == key }
     val templates = data.templates.filter { it.scopeKey == key }
+    var drawModule by remember { mutableStateOf<MainDestination?>(null) }
     val recentPractices = (
         trials.map {
             RecentPractice(
@@ -92,7 +103,12 @@ fun HomeScreen(
         .sortedByDescending { it.lastPracticedAt }
         .take(5)
 
-    LazyColumn(
+    val listState = rememberLazyListState()
+    Box(
+        Modifier.fillMaxSize(),
+    ) {
+        LazyColumn(
+        state = listState,
         contentPadding = PaddingValues(
             start = 20.dp,
             end = 20.dp,
@@ -100,7 +116,7 @@ fun HomeScreen(
             bottom = contentPadding.calculateBottomPadding() + 24.dp,
         ),
         verticalArrangement = Arrangement.spacedBy(18.dp),
-    ) {
+        ) {
         item {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
                 Column(Modifier.weight(1f)) {
@@ -117,32 +133,32 @@ fun HomeScreen(
                 color = Color.Transparent,
             ) {
                 Box(
-                    Modifier.fillMaxWidth().height(210.dp)
+                    Modifier.fillMaxWidth().height(174.dp)
                         .background(Brush.linearGradient(listOf(LocalPrepColors.current.primary, LocalPrepColors.current.secondary))),
                 ) {
-                    Column(Modifier.padding(24.dp)) {
-                        Text("今日练习", color = Color.White, fontSize = 29.sp, fontWeight = FontWeight.Black)
-                        Text("选择一种题型，开始模拟", color = Color.White.copy(alpha = .9f), fontSize = 17.sp)
-                        Spacer(Modifier.height(28.dp))
+                    Column(Modifier.padding(20.dp)) {
+                        Text("今日练习", color = Color.White, fontSize = 25.sp, fontWeight = FontWeight.Black)
+                        Text("选择一种题型，开始模拟", color = Color.White.copy(alpha = .9f), fontSize = 15.sp)
+                        Spacer(Modifier.height(20.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             Surface(
-                                onClick = onRandomTrial,
+                                onClick = { drawModule = MainDestination.TRIAL },
                                 shape = RoundedCornerShape(50),
                                 color = Color.White,
                             ) {
                                 Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                                     Icon(Icons.Rounded.Slideshow, null, tint = LocalPrepColors.current.primary)
-                                    Text(" 抽试讲", color = LocalPrepColors.current.primary, fontWeight = FontWeight.Bold)
+                                    Text(" 抽试讲", color = LocalPrepColors.current.primary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                                 }
                             }
                             Surface(
-                                onClick = onRandomStructured,
+                                onClick = { drawModule = MainDestination.STRUCTURED },
                                 shape = RoundedCornerShape(50),
                                 color = Color.White,
                             ) {
                                 Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                                     Icon(Icons.Rounded.ChatBubbleOutline, null, tint = Color(0xFF7654F6))
-                                    Text(" 抽结构化", color = Color(0xFF7654F6), fontWeight = FontWeight.Bold)
+                                    Text(" 抽结构化", color = Color(0xFF7654F6), fontWeight = FontWeight.Bold, fontSize = 14.sp)
                                 }
                             }
                         }
@@ -151,20 +167,20 @@ fun HomeScreen(
                         Icons.Rounded.Shuffle,
                         contentDescription = null,
                         tint = Color.White.copy(alpha = .18f),
-                        modifier = Modifier.size(145.dp).align(Alignment.CenterEnd).padding(12.dp),
+                        modifier = Modifier.size(112.dp).align(Alignment.CenterEnd).padding(12.dp),
                     )
                 }
             }
         }
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                ModuleCard("试讲", "按教材与题材查找", trials.size, Icons.Rounded.Slideshow, LocalPrepColors.current.primary, Modifier.weight(1f)) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                ModuleCard("试讲", "按教材、单元与题材查找", trials.size, Icons.Rounded.Slideshow, LocalPrepColors.current.primary, Modifier.fillMaxWidth()) {
                     onNavigate(MainDestination.TRIAL)
                 }
-                ModuleCard("结构化", "按问题种类查找", structured.size, Icons.Rounded.ChatBubbleOutline, Color(0xFF7654F6), Modifier.weight(1f)) {
+                ModuleCard("结构化", "按问题种类与重要程度查找", structured.size, Icons.Rounded.ChatBubbleOutline, Color(0xFF7654F6), Modifier.fillMaxWidth()) {
                     onNavigate(MainDestination.STRUCTURED)
                 }
-                ModuleCard("模板", "高频答题框架", templates.size, Icons.Rounded.Layers, Color(0xFFFF9418), Modifier.weight(1f)) {
+                ModuleCard("模板", "查看高频答题框架", templates.size, Icons.Rounded.Layers, Color(0xFFFF9418), Modifier.fillMaxWidth()) {
                     onNavigate(MainDestination.TEMPLATE)
                 }
             }
@@ -210,6 +226,59 @@ fun HomeScreen(
                 }
             }
         }
+        }
+        DraggableScrollToTopButton(
+            listState,
+            Modifier.padding(bottom = contentPadding.calculateBottomPadding()),
+        )
+    }
+
+    when (drawModule) {
+        MainDestination.TRIAL -> RandomDrawDialog(
+            title = "按标签抽试讲",
+            groups = listOf(
+                RandomDrawGroup("textbook", "教材", trials.map { it.textbook }.distinct()),
+                RandomDrawGroup("unit", "单元", trials.map { it.unit }.filter { it.isNotBlank() }.distinct()),
+                RandomDrawGroup("genre", "题材", trials.map { it.genre }.distinct()),
+                RandomDrawGroup("importance", "重要程度", trials.map { "${it.importance} 星" }.distinct().sortedDescending()),
+            ),
+            candidates = trials.map {
+                RandomDrawCandidate(
+                    it.id,
+                    mapOf(
+                        "textbook" to it.textbook,
+                        "unit" to it.unit,
+                        "genre" to it.genre,
+                        "importance" to "${it.importance} 星",
+                    ),
+                )
+            },
+            onDismiss = { drawModule = null },
+            onDraw = {
+                drawModule = null
+                onRandomTrial(it)
+            },
+        )
+        MainDestination.STRUCTURED -> RandomDrawDialog(
+            title = "按标签抽结构化",
+            groups = listOf(
+                RandomDrawGroup("category", "问题种类", structured.map { it.category }.distinct()),
+                RandomDrawGroup("importance", "重要程度", structured.map { "${it.importance} 星" }.distinct().sortedDescending()),
+            ),
+            candidates = structured.map {
+                RandomDrawCandidate(
+                    it.id,
+                    mapOf("category" to it.category, "importance" to "${it.importance} 星"),
+                )
+            },
+            onDismiss = { drawModule = null },
+            onDraw = {
+                drawModule = null
+                onRandomStructured(it)
+            },
+            accent = Color(0xFF7654F6),
+        )
+        else -> Unit
     }
 }
 
@@ -241,13 +310,26 @@ private fun ModuleCard(
     modifier: Modifier,
     onClick: () -> Unit,
 ) {
-    Surface(onClick = onClick, modifier = modifier.height(180.dp), shape = RoundedCornerShape(22.dp), color = color, shadowElevation = 5.dp) {
-        Column(Modifier.padding(15.dp)) {
-            Text(title, color = Color.White, fontWeight = FontWeight.Black, fontSize = 21.sp)
-            Text(subtitle, color = Color.White.copy(alpha = .85f), fontSize = 12.sp, lineHeight = 17.sp)
-            Spacer(Modifier.weight(1f))
-            Icon(icon, null, tint = Color.White.copy(alpha = .45f), modifier = Modifier.size(55.dp).align(Alignment.CenterHorizontally))
-            Surface(shape = CircleShape, color = Color.White) {
+    Surface(
+        onClick = onClick,
+        modifier = modifier,
+        shape = RoundedCornerShape(18.dp),
+        color = Color.White,
+        border = androidx.compose.foundation.BorderStroke(1.dp, color.copy(alpha = .22f)),
+        shadowElevation = 1.dp,
+    ) {
+        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier.size(46.dp).background(color.copy(alpha = .11f), RoundedCornerShape(14.dp)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(icon, null, tint = color, modifier = Modifier.size(25.dp))
+            }
+            Column(Modifier.padding(start = 13.dp).weight(1f)) {
+                Text(title, color = Color(0xFF24242A), fontWeight = FontWeight.Black, fontSize = 18.sp)
+                Text(subtitle, color = Color.Gray, fontSize = 12.sp, lineHeight = 16.sp)
+            }
+            Surface(shape = CircleShape, color = color.copy(alpha = .1f)) {
                 Text("$count 条", modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp), color = color, fontSize = 12.sp, fontWeight = FontWeight.Bold)
             }
         }

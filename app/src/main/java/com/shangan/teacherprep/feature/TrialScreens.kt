@@ -1,6 +1,7 @@
 package com.shangan.teacherprep.feature
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -16,6 +17,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
@@ -23,6 +27,7 @@ import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.Image
+import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material3.Icon
@@ -39,6 +44,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -55,15 +61,21 @@ import com.shangan.teacherprep.data.AppPreferences
 import com.shangan.teacherprep.data.PracticeMediaType
 import com.shangan.teacherprep.data.TrialLesson
 import com.shangan.teacherprep.ui.FilterChips
+import com.shangan.teacherprep.ui.DraggableScrollToTopButton
 import com.shangan.teacherprep.ui.ImportanceStars
 import com.shangan.teacherprep.ui.MarkdownText
 import com.shangan.teacherprep.ui.ModuleImportEntry
 import com.shangan.teacherprep.ui.PracticeTimer
+import com.shangan.teacherprep.ui.RandomDrawCandidate
+import com.shangan.teacherprep.ui.RandomDrawDialog
+import com.shangan.teacherprep.ui.RandomDrawGroup
 import com.shangan.teacherprep.ui.RoundedCard
 import com.shangan.teacherprep.ui.ScreenHeader
 import com.shangan.teacherprep.ui.SectionPanel
 import com.shangan.teacherprep.ui.practiceHistoryText
 import com.shangan.teacherprep.ui.theme.LocalPrepColors
+import com.shangan.teacherprep.ui.observeHorizontalSwipe
+import kotlinx.coroutines.launch
 
 @Composable
 fun TrialLibraryScreen(
@@ -81,10 +93,11 @@ fun TrialLibraryScreen(
     var unit by remember { mutableStateOf("全部") }
     var genre by remember { mutableStateOf("全部") }
     var importance by remember { mutableStateOf("全部") }
-    val items = data.trials
+    var showDrawDialog by remember { mutableStateOf(false) }
+    val scopeItems = data.trials.filter { it.scopeKey == scope.key }
+    val items = scopeItems
         .filter {
-            it.scopeKey == scope.key &&
-                (!filterVisibility.trialSearch || query.isBlank() || it.title.contains(query, true) || it.courseInfoMarkdown.contains(query, true)) &&
+            (!filterVisibility.trialSearch || query.isBlank() || it.title.contains(query, true) || it.courseInfoMarkdown.contains(query, true)) &&
                 (!filterVisibility.trialTextbook || textbook == "全部" || it.textbook == textbook) &&
                 (!filterVisibility.trialUnit || unit == "全部" || it.unit == unit) &&
                 (!filterVisibility.trialGenre || genre == "全部" || it.genre == genre) &&
@@ -98,17 +111,20 @@ fun TrialLibraryScreen(
                 { it.title },
             ),
         )
+    val listState = rememberLazyListState()
 
     Scaffold(
         containerColor = LocalPrepColors.current.primary.copy(alpha = .035f),
     ) { inner ->
-        LazyColumn(
+        Box(Modifier.fillMaxSize()) {
+            LazyColumn(
+            state = listState,
             contentPadding = PaddingValues(
                 top = contentPadding.calculateTopPadding() + inner.calculateTopPadding(),
                 bottom = contentPadding.calculateBottomPadding() + inner.calculateBottomPadding() + 80.dp,
             ),
             verticalArrangement = Arrangement.spacedBy(14.dp),
-        ) {
+            ) {
             item { ScreenHeader("试讲", scope, onSwitchScope) }
             item {
                 ModuleImportEntry(
@@ -164,24 +180,23 @@ fun TrialLibraryScreen(
                 }
             }
             item {
-                val random = items.randomOrNull()
                 Surface(
-                    onClick = { random?.let { onOpen(it.id) } },
+                    onClick = { showDrawDialog = true },
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
                     shape = RoundedCornerShape(24.dp),
                     color = Color.Transparent,
                 ) {
                     Row(
                         Modifier.background(Brush.horizontalGradient(listOf(Color(0xFFFF806B), LocalPrepColors.current.primary)))
-                            .padding(22.dp),
+                            .padding(17.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Surface(shape = RoundedCornerShape(50), color = Color.White) {
-                            Icon(Icons.Rounded.Shuffle, null, tint = LocalPrepColors.current.primary, modifier = Modifier.padding(15.dp).size(30.dp))
+                            Icon(Icons.Rounded.Shuffle, null, tint = LocalPrepColors.current.primary, modifier = Modifier.padding(11.dp).size(25.dp))
                         }
                         Column(Modifier.padding(start = 18.dp)) {
-                            Text("随机抽课", color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.Black)
-                            Text("从当前筛选中抽取一道", color = Color.White.copy(alpha = .85f))
+                            Text("随机抽课", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Black)
+                            Text("从当前筛选中抽取一课", color = Color.White.copy(alpha = .85f), fontSize = 13.sp)
                         }
                     }
                 }
@@ -197,36 +212,84 @@ fun TrialLibraryScreen(
                         fontSize = 20.sp,
                     )
                 }
-                items(items.size) { index -> TrialCard(items[index], index, onOpen) }
+                items(items.size) { index -> TrialCard(items[index], onOpen) }
             }
+            }
+            DraggableScrollToTopButton(
+                listState,
+                Modifier.padding(bottom = contentPadding.calculateBottomPadding()),
+            )
         }
+    }
+
+    if (showDrawDialog) {
+        RandomDrawDialog(
+            title = "按标签抽试讲",
+            groups = listOf(
+                RandomDrawGroup("textbook", "教材", scopeItems.map { it.textbook }.distinct()),
+                RandomDrawGroup("unit", "单元", scopeItems.map { it.unit }.filter { it.isNotBlank() }.distinct()),
+                RandomDrawGroup("genre", "题材", scopeItems.map { it.genre }.distinct()),
+                RandomDrawGroup("importance", "重要程度", scopeItems.map { "${it.importance} 星" }.distinct().sortedDescending()),
+            ),
+            candidates = scopeItems.map {
+                RandomDrawCandidate(
+                    it.id,
+                    mapOf(
+                        "textbook" to it.textbook,
+                        "unit" to it.unit,
+                        "genre" to it.genre,
+                        "importance" to "${it.importance} 星",
+                    ),
+                )
+            },
+            initialSelections = mapOf(
+                "textbook" to setOfNotAll(textbook),
+                "unit" to setOfNotAll(unit),
+                "genre" to setOfNotAll(genre),
+                "importance" to setOfNotAll(importance),
+            ),
+            onDismiss = { showDrawDialog = false },
+            onDraw = {
+                showDrawDialog = false
+                onOpen(it)
+            },
+        )
     }
 }
 
+private fun setOfNotAll(value: String): Set<String> =
+    if (value == "全部") emptySet() else setOf(value)
+
 @Composable
-private fun TrialCard(item: TrialLesson, index: Int, onOpen: (String) -> Unit) {
+private fun TrialCard(item: TrialLesson, onOpen: (String) -> Unit) {
     RoundedCard(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
         onClick = { onOpen(item.id) },
-        containerColor = if (index % 2 == 0) Color.White else Color(0xFFF1F6FF),
+        containerColor = Color.White,
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
-                Modifier.size(92.dp).background(LocalPrepColors.current.primary.copy(alpha = .1f), RoundedCornerShape(18.dp)),
+                Modifier.size(68.dp).background(LocalPrepColors.current.primary.copy(alpha = .08f), RoundedCornerShape(15.dp)),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(Icons.Rounded.Image, null, tint = LocalPrepColors.current.primary, modifier = Modifier.size(36.dp))
+                Icon(Icons.Rounded.Image, null, tint = LocalPrepColors.current.primary, modifier = Modifier.size(28.dp))
             }
-            Column(Modifier.padding(start = 16.dp).weight(1f)) {
-                Text(lessonDisplayTitle(item), fontSize = 21.sp, fontWeight = FontWeight.Black)
-                Text(listOf(item.textbook, item.unit, item.genre).filter { it.isNotBlank() }.joinToString(" · "), color = Color.Gray)
-                ImportanceStars(item.importance, modifier = Modifier.padding(top = 5.dp), iconSize = 18)
-                Spacer(Modifier.height(9.dp))
-                Text("${item.durationMinutes} 分钟", fontSize = 13.sp, color = Color.Gray)
+            Column(Modifier.padding(start = 14.dp).weight(1f)) {
+                Text(lessonDisplayTitle(item), fontSize = 18.sp, fontWeight = FontWeight.Black)
+                Text(
+                    listOf(item.textbook, item.unit, item.genre).filter { it.isNotBlank() }.joinToString(" · "),
+                    color = Color.Gray,
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(top = 3.dp),
+                )
+                Row(Modifier.padding(top = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+                    ImportanceStars(item.importance, iconSize = 15)
+                    Text("  ${item.durationMinutes}分钟", fontSize = 12.sp, color = Color.Gray)
+                }
                 Text(
                     practiceHistoryText(item.practiceCount, item.lastPracticedAt),
-                    modifier = Modifier.padding(top = 4.dp),
-                    fontSize = 13.sp,
+                    modifier = Modifier.padding(top = 5.dp),
+                    fontSize = 12.sp,
                     color = LocalPrepColors.current.primary,
                 )
             }
@@ -256,6 +319,7 @@ private fun EmptyState(message: String, onAction: () -> Unit) {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun TrialDetailScreen(
     lesson: TrialLesson,
@@ -264,10 +328,24 @@ fun TrialDetailScreen(
     onBack: () -> Unit,
     onToggleFavorite: () -> Unit,
     onEdit: () -> Unit,
+    onExport: () -> Unit,
     onPractice: () -> Unit,
     onMediaSaved: (PracticeMediaType, String) -> Unit,
+    onMediaDelete: (String) -> Unit,
+    onMediaRename: (String, String) -> Unit,
 ) {
-    var tab by remember { mutableStateOf(1) }
+    val labels = listOf("课程信息", "试讲流程", "板书设计", "练习记录")
+    val pageToTab = listOf(0, 1, 2, 3)
+    val pagerState = rememberPagerState(initialPage = 1, pageCount = { 4 })
+    val listStates = listOf(
+        rememberLazyListState(),
+        rememberLazyListState(),
+        rememberLazyListState(),
+        rememberLazyListState(),
+    )
+    val selectedTab = pageToTab[pagerState.currentPage]
+    val scope = rememberCoroutineScope()
+
     Scaffold(
         modifier = modifier,
         topBar = {
@@ -276,6 +354,9 @@ fun TrialDetailScreen(
                 onBack = onBack,
                 action = {
                     Row {
+                        IconButton(onClick = onExport) {
+                            Icon(Icons.Rounded.Share, contentDescription = "导出课程", tint = LocalPrepColors.current.primary)
+                        }
                         IconButton(onClick = onEdit) {
                             Icon(
                                 Icons.Rounded.Edit,
@@ -323,63 +404,89 @@ fun TrialDetailScreen(
                     fontSize = 13.sp,
                 )
             }
-            val labels = listOf("课程信息", "试讲流程", "板书设计", "练习记录")
-            TabRow(selectedTabIndex = tab, containerColor = LocalPrepColors.current.primary.copy(alpha = .055f)) {
+            TabRow(selectedTabIndex = selectedTab, containerColor = LocalPrepColors.current.primary.copy(alpha = .055f)) {
                 labels.forEachIndexed { index, label ->
-                    Tab(selected = tab == index, onClick = { tab = index }, text = { Text(label, fontWeight = FontWeight.Bold) })
+                    Tab(
+                        selected = selectedTab == index,
+                        onClick = { scope.launch { pagerState.animateScrollToPage(pageToTab.indexOf(index)) } },
+                        text = { Text(label, fontWeight = FontWeight.Bold) },
+                    )
                 }
             }
-            LazyColumn(
-                modifier = Modifier.fillMaxSize().background(LocalPrepColors.current.primary.copy(alpha = .035f)),
-                contentPadding = PaddingValues(20.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
-                when (tab) {
-                    0 -> item {
-                        RoundedCard(containerColor = Color(0xFFF4F8FF)) {
-                            Text("课时信息", fontSize = 21.sp, fontWeight = FontWeight.Black)
-                            Text(
-                                if (lesson.lessonOrder > 0) "第${lesson.lessonOrder}课 · ${lesson.textbook} · ${lesson.unit}" else "${lesson.textbook} · ${lesson.unit}",
-                                modifier = Modifier.padding(top = 8.dp, bottom = 14.dp),
-                                color = LocalPrepColors.current.primary,
-                                fontWeight = FontWeight.Bold,
-                            )
-                            MarkdownText(lesson.courseInfoMarkdown)
-                        }
-                    }
-                    1 -> items(lesson.bodySections.size) { index ->
-                        val section = lesson.bodySections[index]
-                        RoundedCard(
-                            containerColor = if (index % 2 == 0) Color(0xFFF7FAFF) else Color(0xFFFFF7F5),
+            Box(Modifier.fillMaxSize()) {
+                HorizontalPager(
+                    state = pagerState,
+                    modifier = Modifier.fillMaxSize().observeHorizontalSwipe(
+                        onSwipeRight = { if (pagerState.currentPage == 0) onBack() },
+                    ),
+                    beyondViewportPageCount = 1,
+                ) { page ->
+                    val tab = pageToTab[page]
+                    val listState = listStates[tab]
+                    Box(Modifier.fillMaxSize()) {
+                        LazyColumn(
+                            state = listState,
+                            modifier = Modifier.fillMaxSize().background(LocalPrepColors.current.primary.copy(alpha = .035f)),
+                            contentPadding = PaddingValues(20.dp),
+                            verticalArrangement = Arrangement.spacedBy(16.dp),
                         ) {
-                            Text("${index + 1}、${section.title}", fontSize = 22.sp, fontWeight = FontWeight.Black, color = Color(0xFF202126))
-                            Spacer(Modifier.height(12.dp))
-                            MarkdownText(section.markdown)
-                        }
-                    }
-                    2 -> item {
-                        RoundedCard(containerColor = Color(0xFFF4FAF7)) {
-                            Text("板书设计图", fontSize = 22.sp, fontWeight = FontWeight.Black)
-                            Spacer(Modifier.height(14.dp))
-                            if (lesson.boardImageUri != null) {
-                                AsyncImage(
-                                    model = lesson.boardImageUri,
-                                    contentDescription = "板书设计图",
-                                    modifier = Modifier.fillMaxWidth().aspectRatio(1.15f),
-                                    contentScale = ContentScale.Fit,
-                                )
-                            } else {
-                                BlackboardPlaceholder(lesson.title)
+                            when (tab) {
+                                0 -> item {
+                                    RoundedCard(containerColor = Color.White) {
+                                        Text("课时信息", fontSize = 21.sp, fontWeight = FontWeight.Black)
+                                        Text(
+                                            if (lesson.lessonOrder > 0) "第${lesson.lessonOrder}课 · ${lesson.textbook} · ${lesson.unit}" else "${lesson.textbook} · ${lesson.unit}",
+                                            modifier = Modifier.padding(top = 8.dp, bottom = 14.dp),
+                                            color = LocalPrepColors.current.primary,
+                                            fontWeight = FontWeight.Bold,
+                                        )
+                                        MarkdownText(lesson.courseInfoMarkdown)
+                                    }
+                                }
+                                1 -> items(lesson.bodySections.size) { index ->
+                                    val section = lesson.bodySections[index]
+                                    RoundedCard(containerColor = Color.White) {
+                                        Text("${index + 1}、${section.title}", fontSize = 22.sp, fontWeight = FontWeight.Black, color = Color(0xFF202126))
+                                        Spacer(Modifier.height(12.dp))
+                                        MarkdownText(section.markdown)
+                                    }
+                                }
+                                2 -> item {
+                                    RoundedCard(containerColor = Color.White) {
+                                        Text("板书设计图", fontSize = 22.sp, fontWeight = FontWeight.Black)
+                                        Spacer(Modifier.height(14.dp))
+                                        if (lesson.boardImageUri != null) {
+                                            AsyncImage(
+                                                model = lesson.boardImageUri,
+                                                contentDescription = "板书设计图",
+                                                modifier = Modifier.fillMaxWidth().aspectRatio(1.15f),
+                                                contentScale = ContentScale.Fit,
+                                            )
+                                        } else {
+                                            BlackboardPlaceholder(lesson.title)
+                                        }
+                                    }
+                                }
+                                3 -> item {
+                                    TrialMediaSection(
+                                        lesson = lesson,
+                                        onMediaSaved = onMediaSaved,
+                                        onMediaDelete = onMediaDelete,
+                                        onMediaRename = onMediaRename,
+                                    )
+                                }
                             }
                         }
-                    }
-                    3 -> item {
-                        TrialMediaSection(lesson = lesson, onMediaSaved = onMediaSaved)
+                        DraggableScrollToTopButton(
+                            listState,
+                            Modifier.padding(bottom = padding.calculateBottomPadding()),
+                        )
                     }
                 }
             }
         }
     }
+
 }
 
 private fun lessonDisplayTitle(lesson: TrialLesson): String {

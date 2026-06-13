@@ -31,6 +31,8 @@ data class PracticeMedia(
     val type: PracticeMediaType,
     val filePath: String,
     val createdAt: Long = System.currentTimeMillis(),
+    val attemptNumber: Int = 0,
+    val displayName: String? = null,
 )
 
 @Serializable
@@ -76,6 +78,7 @@ data class StructuredQuestion(
     val importance: Int = 3,
     val practiceCount: Int = 0,
     val lastPracticedAt: Long? = null,
+    val practiceMedia: List<PracticeMedia> = emptyList(),
     val favorite: Boolean = false,
     val updatedAt: Long = System.currentTimeMillis(),
 )
@@ -91,6 +94,7 @@ data class AnswerTemplate(
     val module: String = "通用",
     val practiceCount: Int = 0,
     val lastPracticedAt: Long? = null,
+    val practiceMedia: List<PracticeMedia> = emptyList(),
     val favorite: Boolean = false,
     val updatedAt: Long = System.currentTimeMillis(),
 )
@@ -187,7 +191,7 @@ data class AppPreferences(
 
 @Serializable
 data class AppData(
-    val schemaVersion: Int = 8,
+    val schemaVersion: Int = 11,
     val preferences: AppPreferences = AppPreferences(),
     val scopeConfigs: Map<String, ScopeConfig> = emptyMap(),
     val trials: List<TrialLesson> = emptyList(),

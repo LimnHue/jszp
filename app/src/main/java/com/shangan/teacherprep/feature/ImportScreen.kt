@@ -5,6 +5,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -48,6 +49,8 @@ import com.shangan.teacherprep.ui.GradientActionButton
 import com.shangan.teacherprep.ui.ImportanceStars
 import com.shangan.teacherprep.ui.RoundedCard
 import com.shangan.teacherprep.ui.ScreenHeader
+import com.shangan.teacherprep.ui.DraggableScrollToTopButton
+import com.shangan.teacherprep.ui.observeHorizontalSwipe
 import com.shangan.teacherprep.util.DocumentParser
 
 private enum class EditorMode { VISUAL, MARKDOWN }
@@ -137,11 +140,17 @@ fun ImportScreen(
             boardUri = it.toString()
         }
     }
+    val formScrollState = rememberScrollState()
 
-    Column(modifier.fillMaxSize().background(MaterialTheme.colorScheme.primary.copy(alpha = .025f))) {
-        ScreenHeader(if (editing) "修改内容" else "导入内容", onBack = onBack)
-        Column(
-            Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
+    Box(
+        modifier.fillMaxSize()
+            .background(MaterialTheme.colorScheme.primary.copy(alpha = .025f))
+            .observeHorizontalSwipe(onSwipeLeft = onBack),
+    ) {
+        Column(Modifier.fillMaxSize()) {
+            ScreenHeader(if (editing) "修改内容" else "导入内容", onBack = onBack)
+            Column(
+            Modifier.weight(1f).verticalScroll(formScrollState).padding(horizontal = 20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Text(
@@ -324,7 +333,9 @@ fun ImportScreen(
                 fontSize = 12.sp,
                 modifier = Modifier.padding(bottom = 30.dp),
             )
+            }
         }
+        DraggableScrollToTopButton(formScrollState)
     }
 }
 

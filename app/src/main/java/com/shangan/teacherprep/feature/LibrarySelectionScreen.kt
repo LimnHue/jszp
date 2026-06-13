@@ -9,12 +9,13 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.CheckCircle
@@ -43,6 +44,7 @@ import androidx.compose.ui.unit.sp
 import com.shangan.teacherprep.data.AppData
 import com.shangan.teacherprep.data.LibraryScope
 import com.shangan.teacherprep.ui.GradientActionButton
+import com.shangan.teacherprep.ui.DraggableScrollToTopButton
 import com.shangan.teacherprep.ui.theme.LocalPrepColors
 
 @Composable
@@ -58,44 +60,54 @@ fun LibrarySelectionScreen(
     var subject by remember { mutableStateOf(data.preferences.selectedScope.subject) }
     var textbookVersion by remember { mutableStateOf(data.preferences.selectedScope.textbookVersion) }
     var adding by remember { mutableStateOf<String?>(null) }
+    val scrollState = rememberScrollState()
 
-    Column(
-        modifier = modifier.background(
+    Box(
+        modifier = modifier.fillMaxSize().background(
             Brush.verticalGradient(listOf(LocalPrepColors.current.primary.copy(alpha = .1f), Color.White, Color.White)),
-        ).padding(horizontal = 20.dp),
+        ),
     ) {
-        Spacer(Modifier.height(54.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier.size(48.dp).background(LocalPrepColors.current.primary, RoundedCornerShape(15.dp)),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(Icons.Rounded.MenuBook, contentDescription = null, tint = Color.White)
+        Column(Modifier.fillMaxSize()) {
+            Column(
+            modifier = Modifier.weight(1f).verticalScroll(scrollState).padding(horizontal = 20.dp),
+        ) {
+            Spacer(Modifier.height(24.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    Modifier.size(48.dp).background(LocalPrepColors.current.primary, RoundedCornerShape(15.dp)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(Icons.Rounded.MenuBook, contentDescription = null, tint = Color.White)
+                }
+                Text("  教招上岸", fontSize = 24.sp, fontWeight = FontWeight.Black)
             }
-            Text("  教招上岸", fontSize = 24.sp, fontWeight = FontWeight.Black)
-        }
-        Spacer(Modifier.height(26.dp))
-        Text("选择你的备考题库", fontSize = 38.sp, lineHeight = 44.sp, fontWeight = FontWeight.Black)
-        Text("以后可以随时切换，每个组合都是独立资料库", color = Color.Gray, modifier = Modifier.padding(top = 10.dp))
-        Spacer(Modifier.height(30.dp))
+            Spacer(Modifier.height(26.dp))
+            Text("选择你的备考题库", fontSize = 38.sp, lineHeight = 44.sp, fontWeight = FontWeight.Black)
+            Text("以后可以随时切换，每个组合都是独立资料库", color = Color.Gray, modifier = Modifier.padding(top = 10.dp))
+            Spacer(Modifier.height(30.dp))
 
-        SelectionPanel("学段", data.preferences.stages, stage, { stage = it }, { adding = "学段" })
-        Spacer(Modifier.height(16.dp))
-        SelectionPanel("学科", data.preferences.subjects, subject, { subject = it }, { adding = "学科" })
-        Spacer(Modifier.height(16.dp))
-        SelectionPanel(
-            "教材版本",
-            data.preferences.textbookVersions,
-            textbookVersion,
-            { textbookVersion = it },
-            { adding = "教材版本" },
-        )
-        Spacer(Modifier.weight(1f))
-        GradientActionButton(
-            text = "进入题库",
-            onClick = { onEnter(LibraryScope(stage, subject, textbookVersion)) },
-            modifier = Modifier.fillMaxWidth().padding(bottom = 28.dp),
-        )
+            SelectionPanel("学段", data.preferences.stages, stage, { stage = it }, { adding = "学段" })
+            Spacer(Modifier.height(16.dp))
+            SelectionPanel("学科", data.preferences.subjects, subject, { subject = it }, { adding = "学科" })
+            Spacer(Modifier.height(16.dp))
+            SelectionPanel(
+                "教材版本",
+                data.preferences.textbookVersions,
+                textbookVersion,
+                { textbookVersion = it },
+                { adding = "教材版本" },
+            )
+            Spacer(Modifier.height(24.dp))
+        }
+            Surface(color = Color.White.copy(alpha = .97f), shadowElevation = 8.dp) {
+                GradientActionButton(
+                    text = "进入题库",
+                    onClick = { onEnter(LibraryScope(stage, subject, textbookVersion)) },
+                    modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp, vertical = 14.dp),
+                )
+            }
+        }
+        DraggableScrollToTopButton(scrollState, Modifier.padding(bottom = 78.dp))
     }
 
     adding?.let { type ->
@@ -140,33 +152,69 @@ private fun SelectionPanel(
                     Text("自定义")
                 }
             }
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(3),
-                modifier = Modifier.height(if (values.size > 6) 150.dp else 100.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                items(values) { value ->
-                    val active = value == selected
-                    Surface(
-                        onClick = { onSelect(value) },
-                        shape = RoundedCornerShape(16.dp),
-                        color = if (active) LocalPrepColors.current.primary.copy(alpha = .09f) else Color(0xFFF7F7F8),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, if (active) LocalPrepColors.current.primary else Color(0xFFE8E8EA)),
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                values.chunked(3).forEach { rowValues ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
-                        Box(Modifier.height(48.dp), contentAlignment = Alignment.Center) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    if (title == "学段") Icons.Rounded.School else Icons.Rounded.MenuBook,
-                                    contentDescription = null,
-                                    tint = if (active) LocalPrepColors.current.primary else Color.Gray,
-                                    modifier = Modifier.size(18.dp),
-                                )
-                                Text(" $value", fontWeight = if (active) FontWeight.Bold else FontWeight.Normal)
-                                if (active) Icon(Icons.Rounded.CheckCircle, null, tint = LocalPrepColors.current.primary, modifier = Modifier.size(16.dp))
-                            }
+                        rowValues.forEach { value ->
+                            SelectionOption(
+                                title = title,
+                                value = value,
+                                active = value == selected,
+                                modifier = Modifier.weight(1f),
+                                onClick = { onSelect(value) },
+                            )
+                        }
+                        repeat(3 - rowValues.size) {
+                            Spacer(Modifier.weight(1f))
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SelectionOption(
+    title: String,
+    value: String,
+    active: Boolean,
+    modifier: Modifier,
+    onClick: () -> Unit,
+) {
+    Surface(
+        onClick = onClick,
+        modifier = modifier.heightIn(min = 52.dp),
+        shape = RoundedCornerShape(16.dp),
+        color = if (active) LocalPrepColors.current.primary.copy(alpha = .09f) else Color(0xFFF7F7F8),
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            if (active) LocalPrepColors.current.primary else Color(0xFFE8E8EA),
+        ),
+    ) {
+        Box(Modifier.padding(horizontal = 6.dp, vertical = 10.dp), contentAlignment = Alignment.Center) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    if (title == "学段") Icons.Rounded.School else Icons.Rounded.MenuBook,
+                    contentDescription = null,
+                    tint = if (active) LocalPrepColors.current.primary else Color.Gray,
+                    modifier = Modifier.size(18.dp),
+                )
+                Text(
+                    " $value",
+                    fontWeight = if (active) FontWeight.Bold else FontWeight.Normal,
+                    lineHeight = 20.sp,
+                )
+                if (active) {
+                    Icon(
+                        Icons.Rounded.CheckCircle,
+                        null,
+                        tint = LocalPrepColors.current.primary,
+                        modifier = Modifier.size(16.dp),
+                    )
                 }
             }
         }

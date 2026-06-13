@@ -53,6 +53,64 @@ class AppRepository(private val context: Context) {
         FileProvider.getUriForFile(context, "${context.packageName}.files", file)
     }
 
+    suspend fun exportTrialMarkdown(lesson: TrialLesson): Uri = withContext(Dispatchers.IO) {
+        val markdown = buildString {
+            appendLine("# ${lesson.title}")
+            appendLine()
+            appendLine("- 教材：${lesson.textbook}")
+            if (lesson.unit.isNotBlank()) appendLine("- 单元：${lesson.unit}")
+            if (lesson.lessonOrder > 0) appendLine("- 课次：第${lesson.lessonOrder}课")
+            appendLine("- 题材：${lesson.genre}")
+            appendLine("- 试讲时长：${lesson.durationMinutes}分钟")
+            appendLine()
+            appendLine("## 课程信息")
+            appendLine()
+            appendLine(lesson.courseInfoMarkdown)
+            lesson.bodySections.forEach { section ->
+                appendLine()
+                appendLine("## ${section.title}")
+                appendLine()
+                appendLine(section.markdown)
+            }
+            lesson.boardImageUri?.let {
+                appendLine()
+                appendLine("## 板书设计")
+                appendLine()
+                appendLine("板书图片：$it")
+            }
+        }
+        exportMarkdown(lesson.title, markdown)
+    }
+
+    suspend fun exportStructuredMarkdown(question: StructuredQuestion): Uri = withContext(Dispatchers.IO) {
+        val markdown = buildString {
+            appendLine("# ${question.question}")
+            appendLine()
+            appendLine("- 类型：${question.category}")
+            appendLine("- 重要程度：${question.importance}星")
+            appendLine("- 建议时长：${question.durationMinutes}分钟")
+            question.answerSections.forEach { section ->
+                appendLine()
+                appendLine("## ${section.title}")
+                appendLine()
+                appendLine(section.markdown)
+            }
+        }
+        exportMarkdown(question.question, markdown)
+    }
+
+    suspend fun exportTemplateMarkdown(template: AnswerTemplate): Uri = withContext(Dispatchers.IO) {
+        val markdown = buildString {
+            appendLine("# ${template.name}")
+            appendLine()
+            appendLine("- 类型：${template.category}")
+            appendLine("- 模块：${template.module}")
+            appendLine()
+            appendLine(template.contentMarkdown)
+        }
+        exportMarkdown(template.name, markdown)
+    }
+
     suspend fun importBackup(uri: Uri, current: AppData): AppData = withContext(Dispatchers.IO) {
         val incoming = context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { reader ->
             json.decodeFromString<AppData>(reader.readText())
@@ -72,6 +130,14 @@ class AppRepository(private val context: Context) {
         temp.writeText(json.encodeToString(data))
         if (storeFile.exists()) storeFile.delete()
         temp.renameTo(storeFile)
+    }
+
+    private fun exportMarkdown(title: String, markdown: String): Uri {
+        val exportDir = File(context.cacheDir, "exports").apply { mkdirs() }
+        val safeTitle = title.replace(Regex("""[\\/:*?"<>|]"""), "_").take(60).ifBlank { "导出内容" }
+        val file = File(exportDir, "$safeTitle.md")
+        file.writeText(markdown)
+        return FileProvider.getUriForFile(context, "${context.packageName}.files", file)
     }
 
     private fun migrate(data: AppData): AppData {
@@ -95,8 +161,11 @@ class AppRepository(private val context: Context) {
         if (originalVersion < 8) {
             migrated = enrichTrialLessonOrderAndEvents(migrated)
         }
-        if (originalVersion >= 8) return data
-        return migrated.copy(schemaVersion = 8).also(::saveBlocking)
+        if (originalVersion < 9) {
+            migrated = numberPracticeMedia(migrated)
+        }
+        if (originalVersion >= 11) return data
+        return migrated.copy(schemaVersion = 11).also(::saveBlocking)
     }
 
     private fun addBundledTrials(data: AppData): AppData {
@@ -126,7 +195,7 @@ class AppRepository(private val context: Context) {
         val bundledTextbooks = bundled.map { it.textbook }
         val bundledGenres = bundled.map { it.genre }
         return data.copy(
-            schemaVersion = 8,
+            schemaVersion = 11,
             scopeConfigs = data.scopeConfigs + (
                 scopeKey to currentConfig.copy(
                     textbooks = (currentConfig.textbooks + bundledTextbooks).distinct(),
@@ -157,7 +226,7 @@ class AppRepository(private val context: Context) {
             else lesson.copy(unit = unitsByTitle[normalizeTitle(lesson.title)] ?: "其他")
         }
         return data.copy(
-            schemaVersion = 8,
+            schemaVersion = 11,
             trials = trials,
             scopeConfigs = data.scopeConfigs.mapValues { (scopeKey, config) ->
                 val scopeUnits = trials.filter { it.scopeKey == scopeKey }.map { it.unit }.filter { it.isNotBlank() }
@@ -187,7 +256,7 @@ class AppRepository(private val context: Context) {
             newKey to migratedConfig
         }
         return data.copy(
-            schemaVersion = 8,
+            schemaVersion = 11,
             preferences = data.preferences.copy(
                 selectedScope = data.preferences.selectedScope.copy(
                     textbookVersion = data.preferences.selectedScope.textbookVersion.ifBlank { "人教版" },
@@ -233,5 +302,27 @@ class AppRepository(private val context: Context) {
             }
         }
         return data.copy(trials = trials, practiceEvents = events)
+    }
+
+    private fun numberPracticeMedia(data: AppData): AppData {
+        return data.copy(
+            trials = data.trials.map { lesson ->
+                val numbersById = lesson.practiceMedia
+                    .groupBy { it.type }
+                    .values
+                    .flatMap { mediaOfType ->
+                        mediaOfType
+                            .sortedWith(compareBy<PracticeMedia> { it.createdAt }.thenBy { it.id })
+                            .mapIndexed { index, media -> media.id to (index + 1) }
+                    }
+                    .toMap()
+                lesson.copy(
+                    practiceMedia = lesson.practiceMedia.map { media ->
+                        if (media.attemptNumber > 0) media
+                        else media.copy(attemptNumber = numbersById.getValue(media.id))
+                    },
+                )
+            },
+        )
     }
 }

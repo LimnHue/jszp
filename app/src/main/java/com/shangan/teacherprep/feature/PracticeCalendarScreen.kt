@@ -2,15 +2,18 @@ package com.shangan.teacherprep.feature
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ChevronLeft
@@ -35,7 +38,9 @@ import com.shangan.teacherprep.data.AppData
 import com.shangan.teacherprep.data.PracticeEvent
 import com.shangan.teacherprep.data.PracticeModule
 import com.shangan.teacherprep.ui.ScreenHeader
+import com.shangan.teacherprep.ui.DraggableScrollToTopButton
 import com.shangan.teacherprep.ui.theme.LocalPrepColors
+import com.shangan.teacherprep.ui.observeHorizontalSwipe
 import java.time.Instant
 import java.time.LocalDate
 import java.time.YearMonth
@@ -59,11 +64,14 @@ fun PracticeCalendarScreen(
         Instant.ofEpochMilli(it.practicedAt).atZone(zone).toLocalDate()
     }
     val selectedEvents = eventsByDate[selectedDate].orEmpty().sortedByDescending { it.practicedAt }
+    val listState = rememberLazyListState()
 
-    LazyColumn(
+    Box(Modifier.fillMaxSize().observeHorizontalSwipe(onSwipeLeft = onBack)) {
+        LazyColumn(
+        state = listState,
         contentPadding = PaddingValues(bottom = 28.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
+        ) {
         item { ScreenHeader("练习日历", onBack = onBack) }
         item {
             Surface(
@@ -155,6 +163,8 @@ fun PracticeCalendarScreen(
                 }
             }
         }
+        }
+        DraggableScrollToTopButton(listState)
     }
 }
 

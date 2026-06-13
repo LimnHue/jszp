@@ -7,6 +7,10 @@ import android.media.MediaRecorder
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -18,11 +22,20 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.PlayCircle
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.Videocam
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -54,19 +67,48 @@ private val mediaTimeFormatter = DateTimeFormatter.ofPattern("yyyy年M月d日 HH
 fun TrialMediaSection(
     lesson: TrialLesson,
     onMediaSaved: (PracticeMediaType, String) -> Unit,
+    onMediaDelete: (String) -> Unit,
+    onMediaRename: (String, String) -> Unit,
+) = PracticeMediaSection(
+    itemId = lesson.id,
+    mediaItems = lesson.practiceMedia,
+    practiceLabel = "试讲",
+    onMediaSaved = onMediaSaved,
+    onMediaDelete = onMediaDelete,
+    onMediaRename = onMediaRename,
+)
+
+@Composable
+fun PracticeMediaSection(
+    itemId: String,
+    mediaItems: List<PracticeMedia>,
+    practiceLabel: String,
+    onMediaSaved: (PracticeMediaType, String) -> Unit,
+    onMediaDelete: (String) -> Unit,
+    onMediaRename: (String, String) -> Unit,
 ) {
     val context = LocalContext.current
     var pendingVideo by remember { mutableStateOf<File?>(null) }
     var recorder by remember { mutableStateOf<MediaRecorder?>(null) }
     var recordingFile by remember { mutableStateOf<File?>(null) }
+    var pendingDelete by remember { mutableStateOf<PracticeMedia?>(null) }
+    var pendingActions by remember { mutableStateOf<PracticeMedia?>(null) }
+    var pendingRename by remember { mutableStateOf<PracticeMedia?>(null) }
+    var renameText by remember { mutableStateOf("") }
 
-    fun mediaFile(extension: String): File {
-        val directory = File(context.filesDir, "practice_media/${lesson.id}").apply { mkdirs() }
-        return File(directory, "${System.currentTimeMillis()}.$extension")
+    fun nextAttemptNumber(type: PracticeMediaType): Int {
+        val existing = mediaItems.filter { it.type == type }
+        return maxOf(existing.size, existing.maxOfOrNull { it.attemptNumber } ?: 0) + 1
+    }
+
+    fun mediaFile(type: PracticeMediaType, extension: String): File {
+        val directory = File(context.filesDir, "practice_media/$itemId").apply { mkdirs() }
+        val mediaLabel = if (type == PracticeMediaType.VIDEO) "视频" else "录音"
+        return File(directory, "第${nextAttemptNumber(type)}次${practiceLabel}${mediaLabel}_${System.currentTimeMillis()}.$extension")
     }
 
     fun startRecording() {
-        val output = mediaFile("m4a")
+        val output = mediaFile(PracticeMediaType.AUDIO, "m4a")
         val nextRecorder = createRecorder(context).apply {
             setAudioSource(MediaRecorder.AudioSource.MIC)
             setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
@@ -112,7 +154,7 @@ fun TrialMediaSection(
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         RoundedCard(containerColor = Color(0xFFF1F7FF)) {
-            Text("试讲影像与录音", fontSize = 21.sp, fontWeight = FontWeight.Black)
+            Text("${practiceLabel}影像与录音", fontSize = 21.sp, fontWeight = FontWeight.Black)
             Text(
                 "每次拍摄或录音都会保存在当前课程下，并自动记录日期时间。",
                 color = Color.Gray,
@@ -128,7 +170,7 @@ fun TrialMediaSection(
                     icon = Icons.Rounded.Videocam,
                     modifier = Modifier.weight(1f),
                 ) {
-                    val output = mediaFile("mp4")
+                    val output = mediaFile(PracticeMediaType.VIDEO, "mp4")
                     pendingVideo = output
                     val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", output)
                     videoLauncher.launch(uri)
@@ -150,37 +192,180 @@ fun TrialMediaSection(
             }
         }
 
-        if (lesson.practiceMedia.isEmpty()) {
+        if (mediaItems.isEmpty()) {
             RoundedCard(containerColor = Color(0xFFF8F9FC)) {
                 Text("暂无视频或录音", color = Color.Gray)
             }
         } else {
-            lesson.practiceMedia.sortedByDescending { it.createdAt }.forEach { media ->
-                Surface(
-                    onClick = { openMedia(context, media) },
-                    shape = RoundedCornerShape(18.dp),
-                    color = if (media.type == PracticeMediaType.VIDEO) Color(0xFFF2F7FF) else Color(0xFFFFF5F1),
-                ) {
-                    Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            if (media.type == PracticeMediaType.VIDEO) Icons.Rounded.Videocam else Icons.Rounded.Mic,
-                            contentDescription = null,
-                            tint = LocalPrepColors.current.primary,
-                            modifier = Modifier.size(30.dp),
-                        )
-                        Column(Modifier.padding(start = 13.dp).weight(1f)) {
-                            Text(
-                                if (media.type == PracticeMediaType.VIDEO) "试讲视频" else "试讲录音",
-                                fontWeight = FontWeight.Bold,
-                            )
-                            Text(formatMediaTime(media.createdAt), color = Color.Gray, fontSize = 13.sp)
-                        }
-                        Icon(Icons.Rounded.PlayCircle, contentDescription = "播放", tint = LocalPrepColors.current.primary)
-                    }
-                }
+            mediaItems.sortedByDescending { it.createdAt }.forEach { media ->
+                MediaItem(
+                    media = media,
+                    practiceLabel = practiceLabel,
+                    fallbackAttemptNumber = fallbackAttemptNumber(media, mediaItems),
+                    onOpen = { openMedia(context, media) },
+                    onDeleteRequest = { pendingDelete = media },
+                    onLongPress = { pendingActions = media },
+                )
             }
         }
     }
+
+    pendingDelete?.let { media ->
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            title = { Text("删除这条记录？") },
+            text = { Text("${mediaDisplayName(media, practiceLabel, fallbackAttemptNumber(media, mediaItems))}及其本地文件将被永久删除。") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        pendingDelete = null
+                        onMediaDelete(media.id)
+                    },
+                ) {
+                    Text("删除")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDelete = null }) {
+                    Text("取消")
+                }
+            },
+        )
+    }
+
+    pendingActions?.let { media ->
+        AlertDialog(
+            onDismissRequest = { pendingActions = null },
+            title = { Text(mediaDisplayName(media, practiceLabel, fallbackAttemptNumber(media, mediaItems))) },
+            text = { Text("选择要执行的操作") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        pendingActions = null
+                        renameText = mediaDisplayName(media, practiceLabel, fallbackAttemptNumber(media, mediaItems))
+                        pendingRename = media
+                    },
+                ) {
+                    Icon(Icons.Rounded.Edit, null)
+                    Text(" 重命名")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        pendingActions = null
+                        pendingDelete = media
+                    },
+                ) {
+                    Icon(Icons.Rounded.Delete, null, tint = Color(0xFFE55245))
+                    Text(" 删除", color = Color(0xFFE55245))
+                }
+            },
+        )
+    }
+
+    pendingRename?.let { media ->
+        AlertDialog(
+            onDismissRequest = { pendingRename = null },
+            title = { Text("重命名记录") },
+            text = {
+                OutlinedTextField(
+                    value = renameText,
+                    onValueChange = { renameText = it.take(50) },
+                    label = { Text("名称") },
+                    singleLine = true,
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onMediaRename(media.id, renameText)
+                        pendingRename = null
+                    },
+                    enabled = renameText.isNotBlank(),
+                ) {
+                    Text("保存")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingRename = null }) {
+                    Text("取消")
+                }
+            },
+        )
+    }
+}
+
+@Composable
+@OptIn(ExperimentalFoundationApi::class)
+private fun MediaItem(
+    media: PracticeMedia,
+    practiceLabel: String,
+    fallbackAttemptNumber: Int,
+    onOpen: () -> Unit,
+    onDeleteRequest: () -> Unit,
+    onLongPress: () -> Unit,
+) {
+    val dismissState = rememberSwipeToDismissBoxState(
+        confirmValueChange = { value ->
+            if (value == SwipeToDismissBoxValue.EndToStart) onDeleteRequest()
+            false
+        },
+        positionalThreshold = { distance -> distance * .3f },
+    )
+    SwipeToDismissBox(
+        state = dismissState,
+        enableDismissFromStartToEnd = false,
+        enableDismissFromEndToStart = true,
+        backgroundContent = {
+            Box(
+                Modifier.fillMaxWidth().background(Color(0xFFE55245), RoundedCornerShape(18.dp)).padding(18.dp),
+                contentAlignment = Alignment.CenterEnd,
+            ) {
+                Icon(Icons.Rounded.Delete, contentDescription = "删除", tint = Color.White)
+            }
+        },
+    ) {
+        Surface(
+            shape = RoundedCornerShape(18.dp),
+            color = if (media.type == PracticeMediaType.VIDEO) Color(0xFFF2F7FF) else Color(0xFFFFF5F1),
+        ) {
+            Row(
+                Modifier.fillMaxWidth()
+                    .combinedClickable(onClick = onOpen, onLongClick = onLongPress)
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    if (media.type == PracticeMediaType.VIDEO) Icons.Rounded.Videocam else Icons.Rounded.Mic,
+                    contentDescription = null,
+                    tint = LocalPrepColors.current.primary,
+                    modifier = Modifier.size(30.dp),
+                )
+                Column(Modifier.padding(start = 13.dp).weight(1f)) {
+                    Text(mediaDisplayName(media, practiceLabel, fallbackAttemptNumber), fontWeight = FontWeight.Bold)
+                    Text(formatMediaTime(media.createdAt), color = Color.Gray, fontSize = 13.sp)
+                }
+                Icon(Icons.Rounded.PlayCircle, contentDescription = "播放", tint = LocalPrepColors.current.primary)
+            }
+        }
+    }
+}
+
+private fun fallbackAttemptNumber(media: PracticeMedia, allMedia: List<PracticeMedia>): Int {
+    return allMedia
+        .filter { it.type == media.type }
+        .sortedWith(compareBy<PracticeMedia> { it.createdAt }.thenBy { it.id })
+        .indexOfFirst { it.id == media.id }
+        .plus(1)
+        .coerceAtLeast(1)
+}
+
+private fun mediaDisplayName(media: PracticeMedia, practiceLabel: String, fallbackAttemptNumber: Int): String {
+    media.displayName?.takeIf { it.isNotBlank() }?.let { return it }
+    val attemptNumber = media.attemptNumber.takeIf { it > 0 } ?: fallbackAttemptNumber
+    val mediaLabel = if (media.type == PracticeMediaType.VIDEO) "视频" else "录音"
+    return "第${attemptNumber}次${practiceLabel}$mediaLabel"
 }
 
 @Composable

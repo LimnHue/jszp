@@ -9,15 +9,25 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.FilterAlt
+import androidx.compose.material.icons.rounded.NotificationsActive
+import androidx.compose.material.icons.rounded.Palette
+import androidx.compose.material.icons.rounded.Storage
+import androidx.compose.material.icons.rounded.Timer
+import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.UploadFile
 import androidx.compose.material3.AlertDialog
@@ -50,7 +60,9 @@ import com.shangan.teacherprep.data.PaletteStyle
 import com.shangan.teacherprep.data.ScopeConfig
 import com.shangan.teacherprep.data.TimerMode
 import com.shangan.teacherprep.ui.RoundedCard
+import com.shangan.teacherprep.ui.DraggableScrollToTopButton
 import com.shangan.teacherprep.ui.ScreenHeader
+import com.shangan.teacherprep.ui.observeHorizontalSwipe
 import kotlin.math.roundToInt
 
 private enum class ConfigField(val label: String) {
@@ -63,10 +75,83 @@ private enum class ConfigField(val label: String) {
     STRUCTURED_SECTION("结构化内容结构"),
 }
 
+enum class SettingsSection(val title: String, val subtitle: String) {
+    TIMER("练习计时", "倒计时、正计时与默认练习时长"),
+    VOICE("语音提示", "提前提醒和练习结束提示"),
+    FILTERS("筛选显示", "控制各题库页面显示哪些筛选项"),
+    APPEARANCE("主题外观", "主题配色与卡片透明度"),
+    LIBRARY("题库分类", "教材、单元、题材和内容结构"),
+    BACKUP("备份与迁移", "导入、导出或分享备考库"),
+}
+
 @Composable
 fun SettingsScreen(
     data: AppData,
     contentPadding: PaddingValues,
+    onOpenSection: (SettingsSection) -> Unit,
+) {
+    val listState = rememberLazyListState()
+    val entries = listOf(
+        Triple(SettingsSection.TIMER, Icons.Rounded.Timer, Color(0xFF287BDE)),
+        Triple(SettingsSection.VOICE, Icons.Rounded.NotificationsActive, Color(0xFFE76A3B)),
+        Triple(SettingsSection.FILTERS, Icons.Rounded.FilterAlt, Color(0xFF6B50D8)),
+        Triple(SettingsSection.APPEARANCE, Icons.Rounded.Palette, Color(0xFFD94E89)),
+        Triple(SettingsSection.LIBRARY, Icons.Rounded.Tune, Color(0xFF138C75)),
+        Triple(SettingsSection.BACKUP, Icons.Rounded.Storage, Color(0xFFD87516)),
+    )
+    Box(Modifier.fillMaxSize()) {
+        LazyColumn(
+        state = listState,
+        modifier = Modifier.background(Color(0xFFF7F9FC)),
+        contentPadding = PaddingValues(
+            top = contentPadding.calculateTopPadding(),
+            bottom = contentPadding.calculateBottomPadding() + 30.dp,
+        ),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+        item { ScreenHeader("设置") }
+        item {
+            Text(
+                "${data.preferences.selectedScope.stage} · ${data.preferences.selectedScope.subject} · ${data.preferences.selectedScope.textbookVersion}",
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 2.dp),
+                color = Color.Gray,
+            )
+        }
+        items(entries.size) { index ->
+            val (section, icon, color) = entries[index]
+            Surface(
+                onClick = { onOpenSection(section) },
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+                shape = RoundedCornerShape(22.dp),
+                color = Color.White,
+                shadowElevation = 2.dp,
+            ) {
+                Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Surface(shape = RoundedCornerShape(15.dp), color = color.copy(alpha = .12f)) {
+                        Icon(icon, null, tint = color, modifier = Modifier.padding(12.dp).size(27.dp))
+                    }
+                    Column(Modifier.padding(start = 14.dp).weight(1f)) {
+                        Text(section.title, fontWeight = FontWeight.Black, fontSize = 19.sp)
+                        Text(section.subtitle, color = Color.Gray, fontSize = 13.sp, modifier = Modifier.padding(top = 3.dp))
+                    }
+                    Icon(Icons.Rounded.ChevronRight, "进入${section.title}", tint = Color.LightGray)
+                }
+            }
+        }
+        }
+        DraggableScrollToTopButton(
+            listState,
+            Modifier.padding(bottom = contentPadding.calculateBottomPadding()),
+        )
+    }
+}
+
+@Composable
+fun SettingsDetailScreen(
+    section: SettingsSection,
+    data: AppData,
+    contentPadding: PaddingValues,
+    onBack: () -> Unit,
     onPreferences: (TimerMode?, Int?, Int?, PaletteStyle?, Float?) -> Unit,
     onReminderPreferences: (Boolean?, Int?, Boolean?) -> Unit,
     onFilterVisibility: ((FilterVisibility) -> FilterVisibility) -> Unit,
@@ -83,17 +168,20 @@ fun SettingsScreen(
         mutableFloatStateOf(prefs.reminderMinutesBeforeEnd.toFloat())
     }
     var opacity by remember(prefs.surfaceOpacity) { mutableFloatStateOf(prefs.surfaceOpacity) }
+    val listState = rememberLazyListState()
 
-    LazyColumn(
+    Box(Modifier.fillMaxSize().observeHorizontalSwipe(onSwipeLeft = onBack)) {
+        LazyColumn(
+        state = listState,
         modifier = Modifier.background(Color(0xFFF7F9FC)),
         contentPadding = PaddingValues(
             top = contentPadding.calculateTopPadding(),
             bottom = contentPadding.calculateBottomPadding() + 30.dp,
         ),
         verticalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
-        item { ScreenHeader("设置") }
-        item {
+        ) {
+        item { ScreenHeader(section.title, onBack = onBack) }
+        if (section == SettingsSection.TIMER) item {
             SettingsTitle("练习计时", Color(0xFF287BDE))
             RoundedCard(
                 Modifier.fillMaxWidth().padding(horizontal = 20.dp),
@@ -120,7 +208,7 @@ fun SettingsScreen(
                 }
             }
         }
-        item {
+        if (section == SettingsSection.VOICE) item {
             SettingsTitle("语音提醒", Color(0xFFE76A3B))
             RoundedCard(
                 Modifier.fillMaxWidth().padding(horizontal = 20.dp),
@@ -152,7 +240,7 @@ fun SettingsScreen(
                 )
             }
         }
-        item {
+        if (section == SettingsSection.FILTERS) item {
             SettingsTitle("筛选显示", Color(0xFF6B50D8))
             RoundedCard(
                 Modifier.fillMaxWidth().padding(horizontal = 20.dp),
@@ -190,7 +278,7 @@ fun SettingsScreen(
                 }
             }
         }
-        item {
+        if (section == SettingsSection.APPEARANCE) item {
             SettingsTitle("主题配色", Color(0xFFD94E89))
             RoundedCard(
                 Modifier.fillMaxWidth().padding(horizontal = 20.dp),
@@ -215,13 +303,13 @@ fun SettingsScreen(
                 }
             }
         }
-        item {
+        if (section == SettingsSection.LIBRARY) item {
             SettingsTitle("当前题库分类", Color(0xFF138C75))
             ConfigEditor(config, onEdit = { editing = it }, onRemove = { field, value ->
                 onUpdateConfig { removeValue(it, field, value) }
             })
         }
-        item {
+        if (section == SettingsSection.BACKUP) item {
             SettingsTitle("备考库迁移", Color(0xFFD87516))
             RoundedCard(
                 Modifier.fillMaxWidth().padding(horizontal = 20.dp),
@@ -236,6 +324,8 @@ fun SettingsScreen(
                 ActionRow(Icons.Rounded.UploadFile, "导入备考库", "按内容 ID 合并，不覆盖本地资料", onImportBackup)
             }
         }
+        }
+        DraggableScrollToTopButton(listState)
     }
 
     editing?.let { field ->

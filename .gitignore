@@ -4,6 +4,7 @@
 .gradle-dist/
 .idea/
 .vscode/
+/AGENTS.md
 local.properties
 build/
 app/build/
