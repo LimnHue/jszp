@@ -164,8 +164,16 @@ class AppRepository(private val context: Context) {
         if (originalVersion < 9) {
             migrated = numberPracticeMedia(migrated)
         }
-        if (originalVersion >= 11) return data
-        return migrated.copy(schemaVersion = 11).also(::saveBlocking)
+        if (originalVersion < 14) {
+            migrated = migrated.copy(
+                preferences = migrated.preferences.copy(
+                    uiScale = 1f,
+                    fontScale = 1f,
+                ),
+            )
+        }
+        if (originalVersion >= 14) return data
+        return migrated.copy(schemaVersion = 14).also(::saveBlocking)
     }
 
     private fun addBundledTrials(data: AppData): AppData {
@@ -195,7 +203,7 @@ class AppRepository(private val context: Context) {
         val bundledTextbooks = bundled.map { it.textbook }
         val bundledGenres = bundled.map { it.genre }
         return data.copy(
-            schemaVersion = 11,
+            schemaVersion = 14,
             scopeConfigs = data.scopeConfigs + (
                 scopeKey to currentConfig.copy(
                     textbooks = (currentConfig.textbooks + bundledTextbooks).distinct(),
@@ -226,7 +234,7 @@ class AppRepository(private val context: Context) {
             else lesson.copy(unit = unitsByTitle[normalizeTitle(lesson.title)] ?: "其他")
         }
         return data.copy(
-            schemaVersion = 11,
+            schemaVersion = 14,
             trials = trials,
             scopeConfigs = data.scopeConfigs.mapValues { (scopeKey, config) ->
                 val scopeUnits = trials.filter { it.scopeKey == scopeKey }.map { it.unit }.filter { it.isNotBlank() }
@@ -256,7 +264,7 @@ class AppRepository(private val context: Context) {
             newKey to migratedConfig
         }
         return data.copy(
-            schemaVersion = 11,
+            schemaVersion = 14,
             preferences = data.preferences.copy(
                 selectedScope = data.preferences.selectedScope.copy(
                     textbookVersion = data.preferences.selectedScope.textbookVersion.ifBlank { "人教版" },

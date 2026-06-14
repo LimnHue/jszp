@@ -26,9 +26,9 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
-import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -59,9 +59,11 @@ import coil.compose.AsyncImage
 import com.shangan.teacherprep.data.AppData
 import com.shangan.teacherprep.data.AppPreferences
 import com.shangan.teacherprep.data.PracticeMediaType
+import com.shangan.teacherprep.data.PracticeModule
 import com.shangan.teacherprep.data.TrialLesson
 import com.shangan.teacherprep.ui.FilterChips
 import com.shangan.teacherprep.ui.DraggableScrollToTopButton
+import com.shangan.teacherprep.ui.BrandMark
 import com.shangan.teacherprep.ui.ImportanceStars
 import com.shangan.teacherprep.ui.MarkdownText
 import com.shangan.teacherprep.ui.ModuleImportEntry
@@ -69,6 +71,8 @@ import com.shangan.teacherprep.ui.PracticeTimer
 import com.shangan.teacherprep.ui.RandomDrawCandidate
 import com.shangan.teacherprep.ui.RandomDrawDialog
 import com.shangan.teacherprep.ui.RandomDrawGroup
+import com.shangan.teacherprep.ui.randomDrawId
+import com.shangan.teacherprep.ui.savedRandomDrawSelections
 import com.shangan.teacherprep.ui.RoundedCard
 import com.shangan.teacherprep.ui.ScreenHeader
 import com.shangan.teacherprep.ui.SectionPanel
@@ -84,6 +88,7 @@ fun TrialLibraryScreen(
     onSwitchScope: () -> Unit,
     onOpen: (String) -> Unit,
     onImport: () -> Unit,
+    onUpdateDrawSelections: (PracticeModule, Map<String, Set<String>>) -> Unit,
 ) {
     val scope = data.preferences.selectedScope
     val filterVisibility = data.preferences.filterVisibility
@@ -95,6 +100,24 @@ fun TrialLibraryScreen(
     var importance by remember { mutableStateOf("全部") }
     var showDrawDialog by remember { mutableStateOf(false) }
     val scopeItems = data.trials.filter { it.scopeKey == scope.key }
+    val drawGroups = listOf(
+        RandomDrawGroup("textbook", "教材", scopeItems.map { it.textbook }.distinct()),
+        RandomDrawGroup("unit", "单元", scopeItems.map { it.unit }.filter { it.isNotBlank() }.distinct()),
+        RandomDrawGroup("genre", "题材", scopeItems.map { it.genre }.distinct()),
+        RandomDrawGroup("importance", "重要程度", scopeItems.map { "${it.importance} 星" }.distinct().sortedDescending()),
+    )
+    val drawCandidates = scopeItems.map {
+        RandomDrawCandidate(
+            it.id,
+            mapOf(
+                "textbook" to it.textbook,
+                "unit" to it.unit,
+                "genre" to it.genre,
+                "importance" to "${it.importance} 星",
+            ),
+        )
+    }
+    val drawSelections = savedRandomDrawSelections(data.preferences, scope.key, PracticeModule.TRIAL)
     val items = scopeItems
         .filter {
             (!filterVisibility.trialSearch || query.isBlank() || it.title.contains(query, true) || it.courseInfoMarkdown.contains(query, true)) &&
@@ -114,7 +137,7 @@ fun TrialLibraryScreen(
     val listState = rememberLazyListState()
 
     Scaffold(
-        containerColor = LocalPrepColors.current.primary.copy(alpha = .035f),
+        containerColor = Color(0xFFF7F5F1),
     ) { inner ->
         Box(Modifier.fillMaxSize()) {
             LazyColumn(
@@ -180,24 +203,42 @@ fun TrialLibraryScreen(
                 }
             }
             item {
-                Surface(
-                    onClick = { showDrawDialog = true },
+                Row(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
-                    shape = RoundedCornerShape(24.dp),
-                    color = Color.Transparent,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Row(
-                        Modifier.background(Brush.horizontalGradient(listOf(Color(0xFFFF806B), LocalPrepColors.current.primary)))
-                            .padding(17.dp),
-                        verticalAlignment = Alignment.CenterVertically,
+                    Surface(
+                        onClick = { randomDrawId(drawGroups, drawCandidates, drawSelections)?.let(onOpen) },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(24.dp),
+                        color = Color(0xFFFCFBF8),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFDDD9D2)),
                     ) {
-                        Surface(shape = RoundedCornerShape(50), color = Color.White) {
-                            Icon(Icons.Rounded.Shuffle, null, tint = LocalPrepColors.current.primary, modifier = Modifier.padding(11.dp).size(25.dp))
+                        Row(
+                            Modifier.padding(17.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Surface(shape = RoundedCornerShape(50), color = Color(0xFFE9EEF2)) {
+                                Icon(Icons.Rounded.Shuffle, null, tint = LocalPrepColors.current.primary, modifier = Modifier.padding(11.dp).size(25.dp))
+                            }
+                            Column(Modifier.padding(start = 18.dp)) {
+                                Text("随机抽课", color = Color(0xFF202224), fontSize = 20.sp, fontWeight = FontWeight.Black)
+                                Text("点击立即从已设范围抽取", color = Color(0xFF74777A), fontSize = 13.sp)
+                            }
                         }
-                        Column(Modifier.padding(start = 18.dp)) {
-                            Text("随机抽课", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Black)
-                            Text("从当前筛选中抽取一课", color = Color.White.copy(alpha = .85f), fontSize = 13.sp)
-                        }
+                    }
+                    Surface(
+                        onClick = { showDrawDialog = true },
+                        shape = RoundedCornerShape(18.dp),
+                        color = Color(0xFFE9EEF2),
+                    ) {
+                        Icon(
+                            Icons.Rounded.Settings,
+                            contentDescription = "设置抽取范围",
+                            tint = LocalPrepColors.current.primary,
+                            modifier = Modifier.padding(17.dp).size(25.dp),
+                        )
                     }
                 }
             }
@@ -225,40 +266,17 @@ fun TrialLibraryScreen(
     if (showDrawDialog) {
         RandomDrawDialog(
             title = "按标签抽试讲",
-            groups = listOf(
-                RandomDrawGroup("textbook", "教材", scopeItems.map { it.textbook }.distinct()),
-                RandomDrawGroup("unit", "单元", scopeItems.map { it.unit }.filter { it.isNotBlank() }.distinct()),
-                RandomDrawGroup("genre", "题材", scopeItems.map { it.genre }.distinct()),
-                RandomDrawGroup("importance", "重要程度", scopeItems.map { "${it.importance} 星" }.distinct().sortedDescending()),
-            ),
-            candidates = scopeItems.map {
-                RandomDrawCandidate(
-                    it.id,
-                    mapOf(
-                        "textbook" to it.textbook,
-                        "unit" to it.unit,
-                        "genre" to it.genre,
-                        "importance" to "${it.importance} 星",
-                    ),
-                )
-            },
-            initialSelections = mapOf(
-                "textbook" to setOfNotAll(textbook),
-                "unit" to setOfNotAll(unit),
-                "genre" to setOfNotAll(genre),
-                "importance" to setOfNotAll(importance),
-            ),
+            groups = drawGroups,
+            candidates = drawCandidates,
+            initialSelections = drawSelections,
             onDismiss = { showDrawDialog = false },
-            onDraw = {
+            onSave = {
+                onUpdateDrawSelections(PracticeModule.TRIAL, it)
                 showDrawDialog = false
-                onOpen(it)
             },
         )
     }
 }
-
-private fun setOfNotAll(value: String): Set<String> =
-    if (value == "全部") emptySet() else setOf(value)
 
 @Composable
 private fun TrialCard(item: TrialLesson, onOpen: (String) -> Unit) {
@@ -272,7 +290,7 @@ private fun TrialCard(item: TrialLesson, onOpen: (String) -> Unit) {
                 Modifier.size(68.dp).background(LocalPrepColors.current.primary.copy(alpha = .08f), RoundedCornerShape(15.dp)),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(Icons.Rounded.Image, null, tint = LocalPrepColors.current.primary, modifier = Modifier.size(28.dp))
+                BrandMark(size = 40)
             }
             Column(Modifier.padding(start = 14.dp).weight(1f)) {
                 Text(lessonDisplayTitle(item), fontSize = 18.sp, fontWeight = FontWeight.Black)
@@ -336,7 +354,10 @@ fun TrialDetailScreen(
 ) {
     val labels = listOf("课程信息", "试讲流程", "板书设计", "练习记录")
     val pageToTab = listOf(0, 1, 2, 3)
-    val pagerState = rememberPagerState(initialPage = 1, pageCount = { 4 })
+    val pagerState = rememberPagerState(
+        initialPage = preferences.defaultTrialStartPage.ordinal.coerceIn(0, 3),
+        pageCount = { 4 },
+    )
     val listStates = listOf(
         rememberLazyListState(),
         rememberLazyListState(),
@@ -404,7 +425,7 @@ fun TrialDetailScreen(
                     fontSize = 13.sp,
                 )
             }
-            TabRow(selectedTabIndex = selectedTab, containerColor = LocalPrepColors.current.primary.copy(alpha = .055f)) {
+            TabRow(selectedTabIndex = selectedTab, containerColor = Color(0xFFFCFBF8)) {
                 labels.forEachIndexed { index, label ->
                     Tab(
                         selected = selectedTab == index,
@@ -426,7 +447,7 @@ fun TrialDetailScreen(
                     Box(Modifier.fillMaxSize()) {
                         LazyColumn(
                             state = listState,
-                            modifier = Modifier.fillMaxSize().background(LocalPrepColors.current.primary.copy(alpha = .035f)),
+                            modifier = Modifier.fillMaxSize().background(Color(0xFFF7F5F1)),
                             contentPadding = PaddingValues(20.dp),
                             verticalArrangement = Arrangement.spacedBy(16.dp),
                         ) {

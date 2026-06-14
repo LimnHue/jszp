@@ -20,7 +20,6 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.WindowInsets
@@ -29,7 +28,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Surface
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.runtime.Composable
@@ -42,10 +40,9 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.core.view.WindowCompat
 import com.shangan.teacherprep.data.TrialLesson
 import com.shangan.teacherprep.data.PracticeModule
 import com.shangan.teacherprep.feature.HomeScreen
@@ -94,6 +91,10 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        WindowCompat.getInsetsController(window, window.decorView).apply {
+            isAppearanceLightStatusBars = true
+            isAppearanceLightNavigationBars = true
+        }
         setContent { TeacherPrepRoot() }
     }
 }
@@ -124,7 +125,13 @@ private fun TeacherPrepRoot(vm: AppViewModel = viewModel()) {
         }
     }
 
-    TeacherPrepTheme(uiState.data.preferences.palette, uiState.data.preferences.surfaceOpacity) {
+    TeacherPrepTheme(
+        paletteStyle = uiState.data.preferences.palette,
+        surfaceOpacity = uiState.data.preferences.surfaceOpacity,
+        logoScale = uiState.data.preferences.logoScale,
+        uiScale = uiState.data.preferences.uiScale,
+        fontScale = uiState.data.preferences.fontScale,
+    ) {
         if (uiState.loading) {
             Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
@@ -168,14 +175,11 @@ private fun TeacherPrepRoot(vm: AppViewModel = viewModel()) {
         Scaffold(
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
             topBar = {
-                Surface(color = MaterialTheme.colorScheme.background, shadowElevation = 1.dp) {
-                    Box(
-                        Modifier.fillMaxWidth()
-                            .statusBarsPadding()
-                            .height(2.dp)
-                            .background(Color(0xFFE7E2E3)),
-                    )
-                }
+                Box(
+                    Modifier.fillMaxWidth()
+                        .statusBarsPadding()
+                        .background(MaterialTheme.colorScheme.background),
+                )
             },
             snackbarHost = { SnackbarHost(snackbar) },
         ) { padding ->
@@ -212,6 +216,7 @@ private fun TeacherPrepRoot(vm: AppViewModel = viewModel()) {
                     data = uiState.data,
                     initialDestination = current.destination,
                     onRoute = { route = it },
+                    onUpdateDrawSelections = vm::updateRandomDrawSelections,
                 )
                 is AppRoute.SettingsDetail -> SettingsDetailScreen(
                     section = current.section,
@@ -219,6 +224,8 @@ private fun TeacherPrepRoot(vm: AppViewModel = viewModel()) {
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(),
                     onBack = { route = AppRoute.Main(MainDestination.SETTINGS) },
                         onPreferences = vm::updatePreferences,
+                        onAppearance = vm::updateAppearance,
+                        onTrialStartPage = vm::updateTrialStartPage,
                         onReminderPreferences = vm::updateReminderPreferences,
                         onFilterVisibility = vm::updateFilterVisibility,
                         onUpdateConfig = vm::updateScopeConfig,
@@ -347,6 +354,7 @@ private fun MainPagerScreen(
     data: com.shangan.teacherprep.data.AppData,
     initialDestination: MainDestination,
     onRoute: (AppRoute) -> Unit,
+    onUpdateDrawSelections: (PracticeModule, Map<String, Set<String>>) -> Unit,
 ) {
     val pages = remember {
         listOf(
@@ -393,6 +401,7 @@ private fun MainPagerScreen(
                         onRandomStructured = {
                             onRoute(AppRoute.StructuredDetail(it, returnToHome = true))
                         },
+                        onUpdateDrawSelections = onUpdateDrawSelections,
                         onOpenCalendar = { onRoute(AppRoute.Calendar) },
                     )
                     MainDestination.TRIAL -> TrialLibraryScreen(
@@ -401,6 +410,7 @@ private fun MainPagerScreen(
                         onSwitchScope = { onRoute(AppRoute.LibrarySelection) },
                         onOpen = { onRoute(AppRoute.TrialDetail(it)) },
                         onImport = { onRoute(AppRoute.Import(ImportModule.TRIAL)) },
+                        onUpdateDrawSelections = onUpdateDrawSelections,
                     )
                     MainDestination.STRUCTURED -> StructuredScreen(
                         data = data,
@@ -408,6 +418,7 @@ private fun MainPagerScreen(
                         onSwitchScope = { onRoute(AppRoute.LibrarySelection) },
                         onImport = { onRoute(AppRoute.Import(ImportModule.STRUCTURED)) },
                         onOpen = { onRoute(AppRoute.StructuredDetail(it)) },
+                        onUpdateDrawSelections = onUpdateDrawSelections,
                     )
                     MainDestination.TEMPLATE -> TemplateScreen(
                         data = data,
@@ -415,6 +426,7 @@ private fun MainPagerScreen(
                         onSwitchScope = { onRoute(AppRoute.LibrarySelection) },
                         onImport = { onRoute(AppRoute.Import(ImportModule.TEMPLATE)) },
                         onOpen = { onRoute(AppRoute.TemplateDetail(it)) },
+                        onUpdateDrawSelections = onUpdateDrawSelections,
                     )
                     MainDestination.SETTINGS -> SettingsScreen(
                         data = data,

@@ -153,6 +153,14 @@ object ScopeDefaults {
 enum class TimerMode { COUNTDOWN, STOPWATCH }
 
 @Serializable
+enum class TrialStartPage {
+    COURSE_INFO,
+    TRIAL_FLOW,
+    BOARD_DESIGN,
+    PRACTICE_RECORDS,
+}
+
+@Serializable
 enum class PaletteStyle { CORAL, SKY, PINK, VIOLET, MINT }
 
 @Serializable
@@ -181,17 +189,22 @@ data class AppPreferences(
     val timerMode: TimerMode = TimerMode.COUNTDOWN,
     val defaultTrialMinutes: Int = 15,
     val defaultStructuredMinutes: Int = 5,
+    val defaultTrialStartPage: TrialStartPage = TrialStartPage.COURSE_INFO,
     val remindBeforeEnd: Boolean = true,
     val reminderMinutesBeforeEnd: Int = 5,
     val remindAtEnd: Boolean = true,
     val filterVisibility: FilterVisibility = FilterVisibility(),
+    val randomDrawSelections: Map<String, Map<String, List<String>>> = emptyMap(),
     val palette: PaletteStyle = PaletteStyle.CORAL,
     val surfaceOpacity: Float = 0.96f,
+    val logoScale: Float = 1f,
+    val uiScale: Float = 1f,
+    val fontScale: Float = 1f,
 )
 
 @Serializable
 data class AppData(
-    val schemaVersion: Int = 11,
+    val schemaVersion: Int = 14,
     val preferences: AppPreferences = AppPreferences(),
     val scopeConfigs: Map<String, ScopeConfig> = emptyMap(),
     val trials: List<TrialLesson> = emptyList(),

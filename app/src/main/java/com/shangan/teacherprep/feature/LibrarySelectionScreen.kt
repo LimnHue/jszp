@@ -45,6 +45,7 @@ import com.shangan.teacherprep.data.AppData
 import com.shangan.teacherprep.data.LibraryScope
 import com.shangan.teacherprep.ui.GradientActionButton
 import com.shangan.teacherprep.ui.DraggableScrollToTopButton
+import com.shangan.teacherprep.ui.BrandMark
 import com.shangan.teacherprep.ui.theme.LocalPrepColors
 
 @Composable
@@ -62,23 +63,14 @@ fun LibrarySelectionScreen(
     var adding by remember { mutableStateOf<String?>(null) }
     val scrollState = rememberScrollState()
 
-    Box(
-        modifier = modifier.fillMaxSize().background(
-            Brush.verticalGradient(listOf(LocalPrepColors.current.primary.copy(alpha = .1f), Color.White, Color.White)),
-        ),
-    ) {
+    Box(modifier = modifier.fillMaxSize().background(Color(0xFFF7F5F1))) {
         Column(Modifier.fillMaxSize()) {
             Column(
             modifier = Modifier.weight(1f).verticalScroll(scrollState).padding(horizontal = 20.dp),
         ) {
             Spacer(Modifier.height(24.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    Modifier.size(48.dp).background(LocalPrepColors.current.primary, RoundedCornerShape(15.dp)),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(Icons.Rounded.MenuBook, contentDescription = null, tint = Color.White)
-                }
+                BrandMark(size = 46)
                 Text("  教招上岸", fontSize = 24.sp, fontWeight = FontWeight.Black)
             }
             Spacer(Modifier.height(26.dp))

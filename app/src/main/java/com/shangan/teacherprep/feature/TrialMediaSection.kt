@@ -153,7 +153,7 @@ fun PracticeMediaSection(
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        RoundedCard(containerColor = Color(0xFFF1F7FF)) {
+        RoundedCard(containerColor = Color(0xFFFCFBF8)) {
             Text("${practiceLabel}影像与录音", fontSize = 21.sp, fontWeight = FontWeight.Black)
             Text(
                 "每次拍摄或录音都会保存在当前课程下，并自动记录日期时间。",
@@ -328,7 +328,7 @@ private fun MediaItem(
     ) {
         Surface(
             shape = RoundedCornerShape(18.dp),
-            color = if (media.type == PracticeMediaType.VIDEO) Color(0xFFF2F7FF) else Color(0xFFFFF5F1),
+            color = Color(0xFFE9EEF2).copy(alpha = .55f),
         ) {
             Row(
                 Modifier.fillMaxWidth()
@@ -380,7 +380,7 @@ private fun MediaAction(
         onClick = onClick,
         modifier = modifier,
         shape = RoundedCornerShape(16.dp),
-        color = if (active) Color(0xFFFFE3DD) else Color.White,
+        color = if (active) Color(0xFFE9EEF2) else Color(0xFFFCFBF8),
     ) {
         Row(Modifier.padding(horizontal = 12.dp, vertical = 13.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(icon, contentDescription = null, tint = LocalPrepColors.current.primary)

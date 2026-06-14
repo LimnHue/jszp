@@ -77,7 +77,7 @@ fun PracticeCalendarScreen(
             Surface(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
                 shape = RoundedCornerShape(24.dp),
-                color = Color(0xFFF2F7FF),
+                color = Color(0xFFE9EEF2),
             ) {
                 Column(Modifier.padding(16.dp)) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -212,7 +212,7 @@ private fun moduleLabel(module: PracticeModule): String = when (module) {
 }
 
 private fun moduleColor(module: PracticeModule): Color = when (module) {
-    PracticeModule.TRIAL -> Color(0xFF2888F5)
-    PracticeModule.STRUCTURED -> Color(0xFF7654F6)
-    PracticeModule.TEMPLATE -> Color(0xFFFF7C20)
+    PracticeModule.TRIAL -> Color(0xFF52677D)
+    PracticeModule.STRUCTURED -> Color(0xFF52677D)
+    PracticeModule.TEMPLATE -> Color(0xFF52677D)
 }

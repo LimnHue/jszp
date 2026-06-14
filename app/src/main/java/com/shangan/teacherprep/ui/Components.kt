@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -72,6 +73,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -86,6 +91,7 @@ import com.shangan.teacherprep.data.AppPreferences
 import com.shangan.teacherprep.data.LibraryScope
 import com.shangan.teacherprep.data.TimerMode
 import com.shangan.teacherprep.ui.theme.LocalPrepColors
+import com.shangan.teacherprep.ui.theme.LocalLogoScale
 import com.shangan.teacherprep.ui.theme.LocalSurfaceOpacity
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -103,7 +109,11 @@ enum class MainDestination(val label: String, val icon: ImageVector) {
 @Composable
 fun PrepBottomBar(selected: MainDestination, onSelect: (MainDestination) -> Unit) {
     val colors = LocalPrepColors.current
-    NavigationBar(containerColor = Color.White, tonalElevation = 4.dp) {
+    NavigationBar(
+        modifier = Modifier.height(72.dp),
+        containerColor = Color(0xFFFCFBF8),
+        tonalElevation = 0.dp,
+    ) {
         MainDestination.entries.forEach { item ->
             NavigationBarItem(
                 selected = selected == item,
@@ -113,10 +123,98 @@ fun PrepBottomBar(selected: MainDestination, onSelect: (MainDestination) -> Unit
                 colors = NavigationBarItemDefaults.colors(
                     selectedIconColor = colors.primary,
                     selectedTextColor = colors.primary,
-                    indicatorColor = colors.primary.copy(alpha = .1f),
+                    indicatorColor = colors.primary.copy(alpha = .09f),
                 ),
             )
         }
+    }
+}
+
+@Composable
+fun BrandMark(modifier: Modifier = Modifier, size: Int = 42) {
+    val scaledSize = size * LocalLogoScale.current
+    val color = LocalPrepColors.current.primary
+    Canvas(modifier = modifier.size(scaledSize.dp).padding((scaledSize * .05f).dp).fillMaxSize()) {
+        val canvasWidth = this.size.width
+        val canvasHeight = this.size.height
+        val strokeWidth = this.size.minDimension * .065f
+        val pageStroke = Stroke(
+            width = strokeWidth,
+            cap = StrokeCap.Round,
+            join = StrokeJoin.Round,
+        )
+        val leftPage = Path().apply {
+            moveTo(canvasWidth * .08f, canvasHeight * .20f)
+            cubicTo(
+                canvasWidth * .22f,
+                canvasHeight * .14f,
+                canvasWidth * .39f,
+                canvasHeight * .16f,
+                canvasWidth * .50f,
+                canvasHeight * .30f,
+            )
+            lineTo(canvasWidth * .50f, canvasHeight * .83f)
+            cubicTo(
+                canvasWidth * .38f,
+                canvasHeight * .72f,
+                canvasWidth * .22f,
+                canvasHeight * .70f,
+                canvasWidth * .08f,
+                canvasHeight * .76f,
+            )
+            close()
+        }
+        val rightPage = Path().apply {
+            moveTo(canvasWidth * .92f, canvasHeight * .20f)
+            cubicTo(
+                canvasWidth * .78f,
+                canvasHeight * .14f,
+                canvasWidth * .61f,
+                canvasHeight * .16f,
+                canvasWidth * .50f,
+                canvasHeight * .30f,
+            )
+            lineTo(canvasWidth * .50f, canvasHeight * .83f)
+            cubicTo(
+                canvasWidth * .62f,
+                canvasHeight * .72f,
+                canvasWidth * .78f,
+                canvasHeight * .70f,
+                canvasWidth * .92f,
+                canvasHeight * .76f,
+            )
+            close()
+        }
+        val play = Path().apply {
+            moveTo(canvasWidth * .27f, canvasHeight * .38f)
+            lineTo(canvasWidth * .27f, canvasHeight * .58f)
+            lineTo(canvasWidth * .43f, canvasHeight * .48f)
+            close()
+        }
+        drawPath(leftPage, color = color, style = pageStroke)
+        drawPath(rightPage, color = color, style = pageStroke)
+        drawPath(play, color = color, style = pageStroke)
+        drawLine(
+            color = color,
+            start = Offset(this.size.width * .63f, this.size.height * .67f),
+            end = Offset(this.size.width * .83f, this.size.height * .47f),
+            strokeWidth = strokeWidth,
+            cap = StrokeCap.Round,
+        )
+        drawLine(
+            color = color,
+            start = Offset(this.size.width * .62f, this.size.height * .68f),
+            end = Offset(this.size.width * .60f, this.size.height * .78f),
+            strokeWidth = strokeWidth,
+            cap = StrokeCap.Round,
+        )
+        drawLine(
+            color = color,
+            start = Offset(this.size.width * .60f, this.size.height * .78f),
+            end = Offset(this.size.width * .70f, this.size.height * .74f),
+            strokeWidth = strokeWidth,
+            cap = StrokeCap.Round,
+        )
     }
 }
 
@@ -225,8 +323,8 @@ private fun BoxScope.DraggableUpButton(
             .align(Alignment.BottomEnd)
             .offset { androidx.compose.ui.unit.IntOffset(dragX.roundToInt(), dragY.roundToInt()) }
             .padding(14.dp)
-            .size(50.dp)
-            .shadow(9.dp, CircleShape)
+            .size(44.dp)
+            .shadow(3.dp, CircleShape)
             .pointerInput(Unit) {
                 detectDragGestures { change, dragAmount ->
                     change.consume()
@@ -235,17 +333,9 @@ private fun BoxScope.DraggableUpButton(
                 }
             },
         shape = CircleShape,
-        color = Color.Transparent,
+        color = LocalPrepColors.current.primary,
     ) {
-        Box(
-            Modifier.background(
-                Brush.radialGradient(
-                    listOf(LocalPrepColors.current.secondary, LocalPrepColors.current.primary),
-                ),
-                CircleShape,
-            ),
-            contentAlignment = Alignment.Center,
-        ) {
+        Box(contentAlignment = Alignment.Center) {
             Canvas(Modifier.size(28.dp)) {
                 val stroke = 3.dp.toPx()
                 drawLine(Color.White, Offset(size.width * .25f, size.height * .47f), Offset(size.width * .5f, size.height * .22f), stroke)
@@ -268,12 +358,12 @@ private fun BoxScope.DraggableUpButton(
 fun ScopePill(scope: LibraryScope, onClick: () -> Unit) {
     Surface(
         onClick = onClick,
-        shape = RoundedCornerShape(50),
+        shape = RoundedCornerShape(18.dp),
         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         color = Color.White,
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text("${scope.stage} · ${scope.subject} · ${scope.textbookVersion}", fontWeight = FontWeight.Bold, fontSize = 13.sp)
@@ -345,16 +435,9 @@ fun GradientActionButton(
         onClick = onClick,
         modifier = modifier.shadow(10.dp, RoundedCornerShape(22.dp)),
         shape = RoundedCornerShape(22.dp),
-        colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent),
-        contentPadding = PaddingValues(),
+        colors = ButtonDefaults.buttonColors(containerColor = LocalPrepColors.current.primary),
     ) {
-        Box(
-            modifier = Modifier.fillMaxWidth().background(Brush.horizontalGradient(listOf(start, end)))
-                .padding(horizontal = 24.dp, vertical = 15.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(text, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 17.sp)
-        }
+        Text(text, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 17.sp)
     }
 }
 
@@ -368,9 +451,9 @@ fun ModuleImportEntry(
     Surface(
         onClick = onClick,
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp),
-        color = color.copy(alpha = .09f),
-        border = androidx.compose.foundation.BorderStroke(1.dp, color.copy(alpha = .45f)),
+        shape = RoundedCornerShape(16.dp),
+        color = Color(0xFFFCFBF8),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFDDD9D2)),
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
@@ -391,11 +474,11 @@ fun RoundedCard(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Card(
-        modifier = modifier.animateContentSize().then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
-        shape = RoundedCornerShape(18.dp),
+        modifier = modifier.fillMaxWidth().animateContentSize().then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
+        shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = containerColor),
-        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE9E7EA)),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFDDD9D2)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
         Column(modifier = Modifier.padding(16.dp), content = content)
     }
@@ -409,9 +492,9 @@ fun SectionPanel(
 ) {
     Surface(
         modifier = modifier,
-        shape = RoundedCornerShape(24.dp),
-        color = color.copy(alpha = .075f),
-        border = androidx.compose.foundation.BorderStroke(1.dp, color.copy(alpha = .16f)),
+        shape = RoundedCornerShape(18.dp),
+        color = Color(0xFFFCFBF8),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFDDD9D2)),
     ) {
         Column(
             modifier = Modifier.padding(vertical = 16.dp),
@@ -544,7 +627,7 @@ fun PracticeTimer(
     }
     Row(
         modifier = modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp))
-            .background(Brush.horizontalGradient(listOf(LocalPrepColors.current.primary, LocalPrepColors.current.gradientEnd)))
+            .background(LocalPrepColors.current.primary)
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

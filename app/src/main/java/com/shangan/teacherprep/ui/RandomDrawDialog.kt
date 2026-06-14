@@ -30,6 +30,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.shangan.teacherprep.ui.theme.LocalPrepColors
+import com.shangan.teacherprep.data.AppPreferences
+import com.shangan.teacherprep.data.PracticeModule
 
 data class RandomDrawGroup(
     val key: String,
@@ -48,7 +50,7 @@ fun RandomDrawDialog(
     groups: List<RandomDrawGroup>,
     candidates: List<RandomDrawCandidate>,
     onDismiss: () -> Unit,
-    onDraw: (String) -> Unit,
+    onSave: (Map<String, Set<String>>) -> Unit,
     initialSelections: Map<String, Set<String>> = emptyMap(),
     accent: Color = LocalPrepColors.current.primary,
 ) {
@@ -129,14 +131,33 @@ fun RandomDrawDialog(
         },
         confirmButton = {
             TextButton(
-                enabled = available.isNotEmpty(),
-                onClick = { available.randomOrNull()?.let { onDraw(it.id) } },
+                onClick = { onSave(selected.toMap()) },
             ) {
-                Text("随机抽取", fontWeight = FontWeight.Bold)
+                Text("保存范围", fontWeight = FontWeight.Bold)
             }
         },
     )
 }
+
+fun savedRandomDrawSelections(
+    preferences: AppPreferences,
+    scopeKey: String,
+    module: PracticeModule,
+): Map<String, Set<String>> =
+    preferences.randomDrawSelections["$scopeKey::${module.name}"]
+        .orEmpty()
+        .mapValues { (_, values) -> values.toSet() }
+
+fun randomDrawId(
+    groups: List<RandomDrawGroup>,
+    candidates: List<RandomDrawCandidate>,
+    selections: Map<String, Set<String>>,
+): String? = candidates.filter { candidate ->
+    groups.all { group ->
+        val selected = selections[group.key].orEmpty().filter { it in group.options }.toSet()
+        selected.isEmpty() || candidate.tags[group.key] in selected
+    }
+}.randomOrNull()?.id
 
 @Composable
 private fun DrawTag(

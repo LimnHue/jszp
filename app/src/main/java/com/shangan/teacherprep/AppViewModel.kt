@@ -20,6 +20,7 @@ import com.shangan.teacherprep.data.ScopeDefaults
 import com.shangan.teacherprep.data.StructuredQuestion
 import com.shangan.teacherprep.data.TimerMode
 import com.shangan.teacherprep.data.TrialLesson
+import com.shangan.teacherprep.data.TrialStartPage
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -72,6 +73,39 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         )
     }
 
+    fun updateLogoScale(scale: Float) = update { data ->
+        data.copy(
+            preferences = data.preferences.copy(
+                logoScale = scale.coerceIn(0.70f, 1.40f),
+            ),
+        )
+    }
+
+    fun updateDisplayScale(uiScale: Float? = null, fontScale: Float? = null) = update { data ->
+        data.copy(
+            preferences = data.preferences.copy(
+                uiScale = uiScale?.coerceIn(0.75f, 1.20f) ?: data.preferences.uiScale,
+                fontScale = fontScale?.coerceIn(0.80f, 1.20f) ?: data.preferences.fontScale,
+            ),
+        )
+    }
+
+    fun updateAppearance(
+        surfaceOpacity: Float,
+        logoScale: Float,
+        uiScale: Float,
+        fontScale: Float,
+    ) = update { data ->
+        data.copy(
+            preferences = data.preferences.copy(
+                surfaceOpacity = surfaceOpacity.coerceIn(0.55f, 1f),
+                logoScale = logoScale.coerceIn(0.70f, 1.40f),
+                uiScale = uiScale.coerceIn(0.75f, 1.20f),
+                fontScale = fontScale.coerceIn(0.80f, 1.20f),
+            ),
+        )
+    }
+
     fun updateReminderPreferences(
         remindBeforeEnd: Boolean? = null,
         reminderMinutesBeforeEnd: Int? = null,
@@ -88,10 +122,31 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         )
     }
 
+    fun updateTrialStartPage(page: TrialStartPage) = update { data ->
+        data.copy(
+            preferences = data.preferences.copy(defaultTrialStartPage = page),
+        )
+    }
+
     fun updateFilterVisibility(transform: (FilterVisibility) -> FilterVisibility) = update { data ->
         data.copy(
             preferences = data.preferences.copy(
                 filterVisibility = transform(data.preferences.filterVisibility),
+            ),
+        )
+    }
+
+    fun updateRandomDrawSelections(
+        module: PracticeModule,
+        selections: Map<String, Set<String>>,
+    ) = update { data ->
+        val key = "${data.preferences.selectedScope.key}::${module.name}"
+        val stored = selections
+            .mapValues { (_, values) -> values.filter { it.isNotBlank() }.sorted() }
+            .filterValues { it.isNotEmpty() }
+        data.copy(
+            preferences = data.preferences.copy(
+                randomDrawSelections = data.preferences.randomDrawSelections + (key to stored),
             ),
         )
     }

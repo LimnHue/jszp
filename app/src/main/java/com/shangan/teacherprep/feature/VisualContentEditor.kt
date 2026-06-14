@@ -93,7 +93,7 @@ fun VisualContentEditor(
         sections.forEachIndexed { sectionIndex, section ->
             RoundedCard(
                 Modifier.fillMaxWidth(),
-                containerColor = if (sectionIndex % 2 == 0) Color(0xFFF5F9FF) else Color(0xFFFFF7F3),
+                containerColor = Color(0xFFFCFBF8),
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(
