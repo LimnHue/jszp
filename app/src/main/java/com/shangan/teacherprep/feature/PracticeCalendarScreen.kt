@@ -37,10 +37,10 @@ import androidx.compose.ui.unit.sp
 import com.shangan.teacherprep.data.AppData
 import com.shangan.teacherprep.data.PracticeEvent
 import com.shangan.teacherprep.data.PracticeModule
+import com.shangan.teacherprep.data.SharedLibrary
 import com.shangan.teacherprep.ui.ScreenHeader
 import com.shangan.teacherprep.ui.DraggableScrollToTopButton
 import com.shangan.teacherprep.ui.theme.LocalPrepColors
-import com.shangan.teacherprep.ui.observeHorizontalSwipe
 import java.time.Instant
 import java.time.LocalDate
 import java.time.YearMonth
@@ -57,7 +57,9 @@ fun PracticeCalendarScreen(
 ) {
     val scopeKey = data.preferences.selectedScope.key
     val zone = ZoneId.systemDefault()
-    val events = data.practiceEvents.filter { it.scopeKey == scopeKey }
+    val events = data.practiceEvents.filter {
+        it.scopeKey == scopeKey || it.scopeKey == SharedLibrary.key
+    }
     var month by remember { mutableStateOf(YearMonth.now()) }
     var selectedDate by remember { mutableStateOf(LocalDate.now()) }
     val eventsByDate = events.groupBy {
@@ -66,7 +68,7 @@ fun PracticeCalendarScreen(
     val selectedEvents = eventsByDate[selectedDate].orEmpty().sortedByDescending { it.practicedAt }
     val listState = rememberLazyListState()
 
-    Box(Modifier.fillMaxSize().observeHorizontalSwipe(onSwipeLeft = onBack)) {
+    Box(Modifier.fillMaxSize()) {
         LazyColumn(
         state = listState,
         contentPadding = PaddingValues(bottom = 28.dp),

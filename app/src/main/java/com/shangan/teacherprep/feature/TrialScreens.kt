@@ -40,6 +40,7 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -61,9 +62,11 @@ import com.shangan.teacherprep.data.AppPreferences
 import com.shangan.teacherprep.data.PracticeMediaType
 import com.shangan.teacherprep.data.PracticeModule
 import com.shangan.teacherprep.data.TrialLesson
+import com.shangan.teacherprep.ui.BatchActionBar
 import com.shangan.teacherprep.ui.FilterChips
 import com.shangan.teacherprep.ui.DraggableScrollToTopButton
 import com.shangan.teacherprep.ui.BrandMark
+import com.shangan.teacherprep.ui.EditableSwipeCard
 import com.shangan.teacherprep.ui.ImportanceStars
 import com.shangan.teacherprep.ui.MarkdownText
 import com.shangan.teacherprep.ui.ModuleImportEntry
@@ -78,7 +81,6 @@ import com.shangan.teacherprep.ui.ScreenHeader
 import com.shangan.teacherprep.ui.SectionPanel
 import com.shangan.teacherprep.ui.practiceHistoryText
 import com.shangan.teacherprep.ui.theme.LocalPrepColors
-import com.shangan.teacherprep.ui.observeHorizontalSwipe
 import kotlinx.coroutines.launch
 
 @Composable
@@ -87,6 +89,10 @@ fun TrialLibraryScreen(
     contentPadding: PaddingValues,
     onSwitchScope: () -> Unit,
     onOpen: (String) -> Unit,
+    onEdit: (String) -> Unit,
+    onDelete: (String) -> Unit,
+    onDeleteBatch: (Set<String>) -> Unit,
+    onExportBatch: (Set<String>) -> Unit,
     onImport: () -> Unit,
     onUpdateDrawSelections: (PracticeModule, Map<String, Set<String>>) -> Unit,
 ) {
@@ -99,6 +105,8 @@ fun TrialLibraryScreen(
     var genre by remember { mutableStateOf("全部") }
     var importance by remember { mutableStateOf("全部") }
     var showDrawDialog by remember { mutableStateOf(false) }
+    var batchMode by remember { mutableStateOf(false) }
+    var selectedIds by remember { mutableStateOf(setOf<String>()) }
     val scopeItems = data.trials.filter { it.scopeKey == scope.key }
     val drawGroups = listOf(
         RandomDrawGroup("textbook", "教材", scopeItems.map { it.textbook }.distinct()),
@@ -135,6 +143,12 @@ fun TrialLibraryScreen(
             ),
         )
     val listState = rememberLazyListState()
+    val visibleIds = remember(items) { items.map { it.id }.toSet() }
+
+    LaunchedEffect(visibleIds) {
+        selectedIds = selectedIds.intersect(visibleIds)
+        if (visibleIds.isEmpty()) batchMode = false
+    }
 
     Scaffold(
         containerColor = Color(0xFFF7F5F1),
@@ -253,7 +267,41 @@ fun TrialLibraryScreen(
                         fontSize = 20.sp,
                     )
                 }
-                items(items.size) { index -> TrialCard(items[index], onOpen) }
+                if (batchMode) {
+                    item {
+                        BatchActionBar(
+                            selectedCount = selectedIds.size,
+                            totalCount = items.size,
+                            itemLabel = "试讲",
+                            modifier = Modifier.padding(horizontal = 20.dp),
+                            onSelectAll = { selectedIds = visibleIds },
+                            onClear = {
+                                batchMode = false
+                                selectedIds = emptySet()
+                            },
+                            onDelete = {
+                                onDeleteBatch(selectedIds)
+                                batchMode = false
+                                selectedIds = emptySet()
+                            },
+                            onExport = { onExportBatch(selectedIds) },
+                        )
+                    }
+                }
+                items(items, key = { it.id }) { item ->
+                    TrialCard(
+                        item = item,
+                        selectionMode = batchMode,
+                        selected = item.id in selectedIds,
+                        onSelectionChange = { selected ->
+                            batchMode = true
+                            selectedIds = if (selected) selectedIds + item.id else selectedIds - item.id
+                        },
+                        onOpen = onOpen,
+                        onEdit = onEdit,
+                        onDelete = onDelete,
+                    )
+                }
             }
             }
             DraggableScrollToTopButton(
@@ -279,29 +327,43 @@ fun TrialLibraryScreen(
 }
 
 @Composable
-private fun TrialCard(item: TrialLesson, onOpen: (String) -> Unit) {
-    RoundedCard(
+private fun TrialCard(
+    item: TrialLesson,
+    selectionMode: Boolean,
+    selected: Boolean,
+    onSelectionChange: (Boolean) -> Unit,
+    onOpen: (String) -> Unit,
+    onEdit: (String) -> Unit,
+    onDelete: (String) -> Unit,
+) {
+    EditableSwipeCard(
+        itemLabel = lessonDisplayTitle(item),
         modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
-        onClick = { onOpen(item.id) },
+        selectionMode = selectionMode,
+        selected = selected,
+        onSelectionChange = onSelectionChange,
+        onOpen = { onOpen(item.id) },
+        onEdit = { onEdit(item.id) },
+        onDelete = { onDelete(item.id) },
         containerColor = Color.White,
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
-                Modifier.size(68.dp).background(LocalPrepColors.current.primary.copy(alpha = .08f), RoundedCornerShape(15.dp)),
+                Modifier.size(56.dp).background(LocalPrepColors.current.primary.copy(alpha = .08f), RoundedCornerShape(13.dp)),
                 contentAlignment = Alignment.Center,
             ) {
-                BrandMark(size = 40)
+                BrandMark(size = 32)
             }
-            Column(Modifier.padding(start = 14.dp).weight(1f)) {
-                Text(lessonDisplayTitle(item), fontSize = 18.sp, fontWeight = FontWeight.Black)
+            Column(Modifier.padding(start = 12.dp).weight(1f)) {
+                Text(lessonDisplayTitle(item), fontSize = 16.sp, fontWeight = FontWeight.Black)
                 Text(
                     listOf(item.textbook, item.unit, item.genre).filter { it.isNotBlank() }.joinToString(" · "),
                     color = Color.Gray,
                     fontSize = 12.sp,
                     modifier = Modifier.padding(top = 3.dp),
                 )
-                Row(Modifier.padding(top = 7.dp), verticalAlignment = Alignment.CenterVertically) {
-                    ImportanceStars(item.importance, iconSize = 15)
+                Row(Modifier.padding(top = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+                    ImportanceStars(item.importance, iconSize = 13)
                     Text("  ${item.durationMinutes}分钟", fontSize = 12.sp, color = Color.Gray)
                 }
                 Text(
@@ -437,9 +499,7 @@ fun TrialDetailScreen(
             Box(Modifier.fillMaxSize()) {
                 HorizontalPager(
                     state = pagerState,
-                    modifier = Modifier.fillMaxSize().observeHorizontalSwipe(
-                        onSwipeRight = { if (pagerState.currentPage == 0) onBack() },
-                    ),
+                    modifier = Modifier.fillMaxSize(),
                     beyondViewportPageCount = 1,
                 ) { page ->
                     val tab = pageToTab[page]

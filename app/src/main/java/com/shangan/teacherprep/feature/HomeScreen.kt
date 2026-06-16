@@ -45,6 +45,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.shangan.teacherprep.data.AppData
 import com.shangan.teacherprep.data.PracticeModule
+import com.shangan.teacherprep.data.SharedLibrary
 import com.shangan.teacherprep.ui.MainDestination
 import com.shangan.teacherprep.ui.BrandMark
 import com.shangan.teacherprep.ui.DraggableScrollToTopButton
@@ -73,8 +74,8 @@ fun HomeScreen(
     val scope = data.preferences.selectedScope
     val key = scope.key
     val trials = data.trials.filter { it.scopeKey == key }
-    val structured = data.structuredQuestions.filter { it.scopeKey == key }
-    val templates = data.templates.filter { it.scopeKey == key }
+    val structured = data.structuredQuestions.filter { it.scopeKey == SharedLibrary.key }
+    val templates = data.templates.filter { it.scopeKey == SharedLibrary.key }
     var drawModule by remember { mutableStateOf<MainDestination?>(null) }
     val trialDrawGroups = listOf(
         RandomDrawGroup("textbook", "教材", trials.map { it.textbook }.distinct()),
@@ -104,7 +105,7 @@ fun HomeScreen(
         )
     }
     val trialDrawSelections = savedRandomDrawSelections(data.preferences, key, PracticeModule.TRIAL)
-    val structuredDrawSelections = savedRandomDrawSelections(data.preferences, key, PracticeModule.STRUCTURED)
+    val structuredDrawSelections = savedRandomDrawSelections(data.preferences, SharedLibrary.key, PracticeModule.STRUCTURED)
     val recentPractices = (
         trials.map {
             RecentPractice(
@@ -150,23 +151,23 @@ fun HomeScreen(
         contentPadding = PaddingValues(
             start = 20.dp,
             end = 20.dp,
-            top = contentPadding.calculateTopPadding() + 20.dp,
+            top = contentPadding.calculateTopPadding() + 14.dp,
             bottom = contentPadding.calculateBottomPadding() + 24.dp,
         ),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
         item {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                BrandMark(size = 42)
-                Column(Modifier.padding(start = 13.dp).weight(1f)) {
-                    Text(greetingForHour(LocalTime.now().hour), fontSize = 29.sp, fontWeight = FontWeight.Black)
-                    Text("今天想练什么？", color = Color(0xFF74777A), fontSize = 15.sp)
+                BrandMark(size = 34)
+                Column(Modifier.padding(start = 11.dp).weight(1f)) {
+                    Text(greetingForHour(LocalTime.now().hour), fontSize = 24.sp, fontWeight = FontWeight.Black)
+                    Text("今天想练什么？", color = Color(0xFF74777A), fontSize = 13.sp)
                 }
                 ScopePill(scope, onSwitchScope)
             }
         }
         item {
-            Text("今日练习", fontSize = 22.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(top = 4.dp))
+            Text("今日练习", fontSize = 19.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(top = 2.dp))
         }
         item {
             Surface(
@@ -174,7 +175,7 @@ fun HomeScreen(
                 color = Color(0xFFFCFBF8),
                 border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFDDD9D2)),
             ) {
-                Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
+                Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp)) {
                     QuickDrawControl(
                         label = "抽试讲",
                         subtitle = "从已设范围随机抽取一课",
@@ -200,7 +201,7 @@ fun HomeScreen(
                 color = Color(0xFFFCFBF8),
                 border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFDDD9D2)),
             ) {
-                Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp)) {
+                Column(Modifier.fillMaxWidth().padding(horizontal = 10.dp)) {
                 ModuleCard("试讲", "按教材、单元与题材查找", trials.size, Icons.Rounded.Slideshow, Modifier.fillMaxWidth(), useBrandMark = true) {
                     onNavigate(MainDestination.TRIAL)
                 }
@@ -217,7 +218,7 @@ fun HomeScreen(
         }
         item {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text("最近练习", fontSize = 22.sp, fontWeight = FontWeight.Black, modifier = Modifier.weight(1f))
+                Text("最近练习", fontSize = 19.sp, fontWeight = FontWeight.Black, modifier = Modifier.weight(1f))
                 Surface(
                     onClick = onOpenCalendar,
                     shape = RoundedCornerShape(18.dp),
@@ -309,33 +310,33 @@ private fun QuickDrawControl(
     onDraw: () -> Unit,
     onSettings: () -> Unit,
 ) {
-    Row(Modifier.fillMaxWidth().height(78.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().height(66.dp), verticalAlignment = Alignment.CenterVertically) {
         Row(
             modifier = Modifier.weight(1f).clickable(onClick = onDraw).padding(horizontal = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
-                Modifier.size(46.dp).background(Color(0xFFE9EEF2), RoundedCornerShape(13.dp)),
+                Modifier.size(40.dp).background(Color(0xFFE9EEF2), RoundedCornerShape(12.dp)),
                 contentAlignment = Alignment.Center,
             ) {
                 if (useBrandMark) {
-                    BrandMark(size = 30)
+                    BrandMark(size = 25)
                 } else {
-                    Icon(icon, null, tint = LocalPrepColors.current.primary, modifier = Modifier.size(25.dp))
+                    Icon(icon, null, tint = LocalPrepColors.current.primary, modifier = Modifier.size(22.dp))
                 }
             }
-            Column(Modifier.padding(start = 14.dp)) {
-                Text(label, color = Color(0xFF202224), fontWeight = FontWeight.Black, fontSize = 18.sp)
-                Text(subtitle, color = Color(0xFF74777A), fontSize = 12.sp)
+            Column(Modifier.padding(start = 11.dp)) {
+                Text(label, color = Color(0xFF202224), fontWeight = FontWeight.Black, fontSize = 16.sp)
+                Text(subtitle, color = Color(0xFF74777A), fontSize = 11.sp)
             }
         }
-        HorizontalDivider(Modifier.height(42.dp).width(1.dp), color = Color(0xFFE4E1DC))
+        HorizontalDivider(Modifier.height(34.dp).width(1.dp), color = Color(0xFFE4E1DC))
         Surface(onClick = onSettings, shape = CircleShape, color = Color.Transparent) {
             Icon(
                 Icons.Rounded.Settings,
                 contentDescription = "设置${label}范围",
                 tint = LocalPrepColors.current.primary,
-                modifier = Modifier.padding(14.dp).size(24.dp),
+                modifier = Modifier.padding(11.dp).size(21.dp),
             )
         }
     }
@@ -376,27 +377,27 @@ private fun ModuleCard(
         color = Color.Transparent,
         shadowElevation = 0.dp,
     ) {
-        Row(Modifier.padding(horizontal = 8.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.padding(horizontal = 6.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(
-                Modifier.size(46.dp).background(Color(0xFFE9EEF2), RoundedCornerShape(13.dp)),
+                Modifier.size(40.dp).background(Color(0xFFE9EEF2), RoundedCornerShape(12.dp)),
                 contentAlignment = Alignment.Center,
             ) {
                 if (useBrandMark) {
-                    BrandMark(size = 30)
+                    BrandMark(size = 25)
                 } else {
-                    Icon(icon, null, tint = LocalPrepColors.current.primary, modifier = Modifier.size(25.dp))
+                    Icon(icon, null, tint = LocalPrepColors.current.primary, modifier = Modifier.size(22.dp))
                 }
             }
-            Column(Modifier.padding(start = 13.dp).weight(1f)) {
-                Text(title, color = Color(0xFF24242A), fontWeight = FontWeight.Black, fontSize = 18.sp)
-                Text(subtitle, color = Color.Gray, fontSize = 12.sp, lineHeight = 16.sp)
+            Column(Modifier.padding(start = 11.dp).weight(1f)) {
+                Text(title, color = Color(0xFF24242A), fontWeight = FontWeight.Black, fontSize = 16.sp)
+                Text(subtitle, color = Color.Gray, fontSize = 11.sp, lineHeight = 15.sp)
             }
             Surface(
                 shape = RoundedCornerShape(14.dp),
                 color = Color.Transparent,
                 border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFDDD9D2)),
             ) {
-                Text("$count 条", modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp), color = Color(0xFF202224), fontSize = 12.sp)
+                Text("$count 条", modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), color = Color(0xFF202224), fontSize = 11.sp)
             }
             Icon(Icons.Rounded.ChevronRight, null, tint = Color(0xFF74777A), modifier = Modifier.padding(start = 8.dp))
         }

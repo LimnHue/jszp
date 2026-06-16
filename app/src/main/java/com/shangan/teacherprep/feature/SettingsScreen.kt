@@ -68,7 +68,6 @@ import com.shangan.teacherprep.data.TrialStartPage
 import com.shangan.teacherprep.ui.RoundedCard
 import com.shangan.teacherprep.ui.DraggableScrollToTopButton
 import com.shangan.teacherprep.ui.ScreenHeader
-import com.shangan.teacherprep.ui.observeHorizontalSwipe
 import com.shangan.teacherprep.ui.theme.LocalPrepColors
 import kotlin.math.roundToInt
 
@@ -197,7 +196,7 @@ fun SettingsDetailScreen(
         }
     }
 
-    Box(Modifier.fillMaxSize().observeHorizontalSwipe(onSwipeLeft = onBack)) {
+    Box(Modifier.fillMaxSize()) {
         LazyColumn(
         state = listState,
         modifier = Modifier.background(Color(0xFFF7F5F1)),
@@ -487,10 +486,10 @@ fun SettingsDetailScreen(
                 ActionRow(
                     Icons.Rounded.Share,
                     "分享当前题库",
-                    "仅导出 ${prefs.selectedScope.stage} · ${prefs.selectedScope.subject} · ${prefs.selectedScope.textbookVersion}",
+                    "导出当前试讲，并附带共享结构化与模板",
                 ) { onExport(false) }
-                ActionRow(Icons.Rounded.Download, "导出完整备考库", "包含所有学段、学科和设置") { onExport(true) }
-                ActionRow(Icons.Rounded.UploadFile, "导入备考库", "按内容 ID 合并，不覆盖本地资料", onImportBackup)
+                ActionRow(Icons.Rounded.Download, "导出完整备考库", "包含所有学段、学科、共享题库和设置") { onExport(true) }
+                ActionRow(Icons.Rounded.UploadFile, "导入备考库", "单题库文件导入当前题库，完整备份按原题库合并", onImportBackup)
             }
         }
         }

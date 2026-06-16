@@ -217,6 +217,21 @@ private fun TeacherPrepRoot(vm: AppViewModel = viewModel()) {
                     initialDestination = current.destination,
                     onRoute = { route = it },
                     onUpdateDrawSelections = vm::updateRandomDrawSelections,
+                    onDeleteTrial = vm::deleteTrial,
+                    onDeleteStructured = vm::deleteStructured,
+                    onDeleteTemplate = vm::deleteTemplate,
+                    onDeleteTrialBatch = vm::deleteTrialBatch,
+                    onDeleteStructuredBatch = vm::deleteStructuredBatch,
+                    onDeleteTemplateBatch = vm::deleteTemplateBatch,
+                    onExportTrialBatch = { ids ->
+                        vm.exportTrialBatch(ids) { shareMarkdown(context, it, "批量试讲") }
+                    },
+                    onExportStructuredBatch = { ids ->
+                        vm.exportStructuredBatch(ids) { shareMarkdown(context, it, "批量结构化") }
+                    },
+                    onExportTemplateBatch = { ids ->
+                        vm.exportTemplateBatch(ids) { shareMarkdown(context, it, "批量模板") }
+                    },
                 )
                 is AppRoute.SettingsDetail -> SettingsDetailScreen(
                     section = current.section,
@@ -334,7 +349,9 @@ private fun TeacherPrepRoot(vm: AppViewModel = viewModel()) {
                     modifier = contentModifier,
                     onBack = { route = returnRoute(current.module, current.itemId) },
                     onAddTrial = vm::addTrial,
+                    onAddTrialBatch = vm::addTrialBatch,
                     onAddStructured = vm::addStructured,
+                    onAddStructuredBatch = vm::addStructuredBatch,
                     onAddTemplate = vm::addTemplate,
                     onUpdateTrial = vm::updateTrial,
                     onUpdateStructured = vm::updateStructured,
@@ -355,6 +372,15 @@ private fun MainPagerScreen(
     initialDestination: MainDestination,
     onRoute: (AppRoute) -> Unit,
     onUpdateDrawSelections: (PracticeModule, Map<String, Set<String>>) -> Unit,
+    onDeleteTrial: (String) -> Unit,
+    onDeleteStructured: (String) -> Unit,
+    onDeleteTemplate: (String) -> Unit,
+    onDeleteTrialBatch: (Set<String>) -> Unit,
+    onDeleteStructuredBatch: (Set<String>) -> Unit,
+    onDeleteTemplateBatch: (Set<String>) -> Unit,
+    onExportTrialBatch: (Set<String>) -> Unit,
+    onExportStructuredBatch: (Set<String>) -> Unit,
+    onExportTemplateBatch: (Set<String>) -> Unit,
 ) {
     val pages = remember {
         listOf(
@@ -409,6 +435,10 @@ private fun MainPagerScreen(
                         contentPadding = pagerPadding,
                         onSwitchScope = { onRoute(AppRoute.LibrarySelection) },
                         onOpen = { onRoute(AppRoute.TrialDetail(it)) },
+                        onEdit = { onRoute(AppRoute.Import(ImportModule.TRIAL, it)) },
+                        onDelete = onDeleteTrial,
+                        onDeleteBatch = onDeleteTrialBatch,
+                        onExportBatch = onExportTrialBatch,
                         onImport = { onRoute(AppRoute.Import(ImportModule.TRIAL)) },
                         onUpdateDrawSelections = onUpdateDrawSelections,
                     )
@@ -418,6 +448,10 @@ private fun MainPagerScreen(
                         onSwitchScope = { onRoute(AppRoute.LibrarySelection) },
                         onImport = { onRoute(AppRoute.Import(ImportModule.STRUCTURED)) },
                         onOpen = { onRoute(AppRoute.StructuredDetail(it)) },
+                        onEdit = { onRoute(AppRoute.Import(ImportModule.STRUCTURED, it)) },
+                        onDelete = onDeleteStructured,
+                        onDeleteBatch = onDeleteStructuredBatch,
+                        onExportBatch = onExportStructuredBatch,
                         onUpdateDrawSelections = onUpdateDrawSelections,
                     )
                     MainDestination.TEMPLATE -> TemplateScreen(
@@ -426,6 +460,10 @@ private fun MainPagerScreen(
                         onSwitchScope = { onRoute(AppRoute.LibrarySelection) },
                         onImport = { onRoute(AppRoute.Import(ImportModule.TEMPLATE)) },
                         onOpen = { onRoute(AppRoute.TemplateDetail(it)) },
+                        onEdit = { onRoute(AppRoute.Import(ImportModule.TEMPLATE, it)) },
+                        onDelete = onDeleteTemplate,
+                        onDeleteBatch = onDeleteTemplateBatch,
+                        onExportBatch = onExportTemplateBatch,
                         onUpdateDrawSelections = onUpdateDrawSelections,
                     )
                     MainDestination.SETTINGS -> SettingsScreen(

@@ -1,15 +1,23 @@
 package com.shangan.teacherprep.util
 
 import android.content.ContentResolver
+import android.content.Context
 import android.net.Uri
 import com.shangan.teacherprep.data.ContentSection
+import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
+import com.tom_roush.pdfbox.io.MemoryUsageSetting
+import com.tom_roush.pdfbox.pdmodel.PDDocument
+import com.tom_roush.pdfbox.text.PDFTextStripper
+import java.io.File
 import java.util.zip.ZipInputStream
 import javax.xml.parsers.DocumentBuilderFactory
 
 object DocumentParser {
-    fun readText(resolver: ContentResolver, uri: Uri, fileName: String): String {
+    fun readText(context: Context, uri: Uri, fileName: String): String {
+        val resolver = context.contentResolver
         return when (fileName.substringAfterLast('.', "").lowercase()) {
             "docx" -> readDocx(resolver, uri)
+            "pdf" -> readPdf(context, resolver, uri)
             else -> resolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }.orEmpty()
         }
     }
@@ -72,5 +80,20 @@ object DocumentParser {
                 if (paragraph.isNotBlank()) appendLine(paragraph)
             }
         }.trim()
+    }
+
+    private fun readPdf(context: Context, resolver: ContentResolver, uri: Uri): String {
+        PDFBoxResourceLoader.init(context.applicationContext)
+        val tempDirectory = File(context.cacheDir, "pdfbox").apply { mkdirs() }
+        val memoryUsage = MemoryUsageSetting
+            .setupMixed(8L * 1024L * 1024L)
+            .setTempDir(tempDirectory)
+        val text = resolver.openInputStream(uri)?.use { stream ->
+            PDDocument.load(stream, memoryUsage).use { document ->
+                PDFTextStripper().getText(document)
+            }
+        }?.trim().orEmpty()
+        check(text.isNotBlank()) { "PDF 中没有可提取文字，可能是扫描版文件" }
+        return text
     }
 }

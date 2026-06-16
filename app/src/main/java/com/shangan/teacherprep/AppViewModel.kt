@@ -9,6 +9,7 @@ import com.shangan.teacherprep.data.AppData
 import com.shangan.teacherprep.data.AppRepository
 import com.shangan.teacherprep.data.ContentSection
 import com.shangan.teacherprep.data.FilterVisibility
+import com.shangan.teacherprep.data.StructuredImportItem
 import com.shangan.teacherprep.data.LibraryScope
 import com.shangan.teacherprep.data.PaletteStyle
 import com.shangan.teacherprep.data.PracticeEvent
@@ -17,8 +18,10 @@ import com.shangan.teacherprep.data.PracticeMediaType
 import com.shangan.teacherprep.data.PracticeModule
 import com.shangan.teacherprep.data.ScopeConfig
 import com.shangan.teacherprep.data.ScopeDefaults
+import com.shangan.teacherprep.data.SharedLibrary
 import com.shangan.teacherprep.data.StructuredQuestion
 import com.shangan.teacherprep.data.TimerMode
+import com.shangan.teacherprep.data.TrialImportItem
 import com.shangan.teacherprep.data.TrialLesson
 import com.shangan.teacherprep.data.TrialStartPage
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -140,7 +143,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         module: PracticeModule,
         selections: Map<String, Set<String>>,
     ) = update { data ->
-        val key = "${data.preferences.selectedScope.key}::${module.name}"
+        val scopeKey = if (module == PracticeModule.TRIAL) {
+            data.preferences.selectedScope.key
+        } else {
+            SharedLibrary.key
+        }
+        val key = "$scopeKey::${module.name}"
         val stored = selections
             .mapValues { (_, values) -> values.filter { it.isNotBlank() }.sorted() }
             .filterValues { it.isNotEmpty() }
@@ -234,7 +242,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun addStructured(category: String, question: String, sections: List<ContentSection>, importance: Int) = update { data ->
         val item = StructuredQuestion(
-            scopeKey = data.preferences.selectedScope.key,
+            scopeKey = SharedLibrary.key,
             category = category,
             question = question.ifBlank { "未命名结构化问题" },
             answerSections = sections,
@@ -242,6 +250,22 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             importance = importance.coerceIn(1, 5),
         )
         data.copy(structuredQuestions = listOf(item) + data.structuredQuestions)
+    }
+
+    fun addStructuredBatch(category: String, items: List<StructuredImportItem>, importance: Int) = update { data ->
+        val questions = items
+            .filter { it.question.isNotBlank() && it.answerSections.isNotEmpty() }
+            .map { item ->
+                StructuredQuestion(
+                    scopeKey = SharedLibrary.key,
+                    category = category,
+                    question = item.question.ifBlank { "未命名结构化问题" },
+                    answerSections = item.answerSections,
+                    durationMinutes = data.preferences.defaultStructuredMinutes,
+                    importance = importance.coerceIn(1, 5),
+                )
+            }
+        if (questions.isEmpty()) data else data.copy(structuredQuestions = questions + data.structuredQuestions)
     }
 
     fun updateStructured(id: String, category: String, question: String, sections: List<ContentSection>, importance: Int) = update { data ->
@@ -260,13 +284,43 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun addTemplate(category: String, name: String, markdown: String) = update { data ->
         val item = AnswerTemplate(
-            scopeKey = data.preferences.selectedScope.key,
+            scopeKey = SharedLibrary.key,
             category = category,
             name = name.ifBlank { "未命名模板" },
             summary = markdown.lineSequence().firstOrNull().orEmpty().take(30),
             contentMarkdown = markdown,
         )
         data.copy(templates = listOf(item) + data.templates)
+    }
+
+    fun addTrialBatch(
+        textbook: String,
+        unit: String,
+        lessonOrder: Int,
+        genre: String,
+        items: List<TrialImportItem>,
+        boardImageUri: String?,
+        importance: Int,
+    ) = update { data ->
+        val scope = data.preferences.selectedScope
+        val lessons = items
+            .filter { it.title.isNotBlank() && it.bodySections.isNotEmpty() }
+            .mapIndexed { index, item ->
+                TrialLesson(
+                    scopeKey = scope.key,
+                    title = item.title.ifBlank { "未命名试讲" },
+                    textbook = textbook,
+                    unit = unit,
+                    lessonOrder = if (lessonOrder > 0) lessonOrder + index else 0,
+                    genre = genre,
+                    courseInfoMarkdown = item.courseInfoMarkdown,
+                    bodySections = item.bodySections,
+                    boardImageUri = boardImageUri,
+                    durationMinutes = data.preferences.defaultTrialMinutes,
+                    importance = importance.coerceIn(1, 5),
+                )
+            }
+        if (lessons.isEmpty()) data else data.copy(trials = lessons + data.trials)
     }
 
     fun updateTemplate(id: String, category: String, name: String, markdown: String) = update { data ->
@@ -293,6 +347,78 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun toggleTemplateFavorite(id: String) = update { data ->
         data.copy(templates = data.templates.map { if (it.id == id) it.copy(favorite = !it.favorite) else it })
+    }
+
+    fun deleteTrial(id: String) = update { data ->
+        val lesson = data.trials.firstOrNull { it.id == id } ?: return@update data
+        lesson.practiceMedia.forEach { deletePracticeMediaFile(it.filePath) }
+        data.copy(
+            trials = data.trials.filterNot { it.id == id },
+            practiceEvents = data.practiceEvents.filterNot {
+                it.module == PracticeModule.TRIAL && it.itemId == id
+            },
+        )
+    }
+
+    fun deleteStructured(id: String) = update { data ->
+        val question = data.structuredQuestions.firstOrNull { it.id == id } ?: return@update data
+        question.practiceMedia.forEach { deletePracticeMediaFile(it.filePath) }
+        data.copy(
+            structuredQuestions = data.structuredQuestions.filterNot { it.id == id },
+            practiceEvents = data.practiceEvents.filterNot {
+                it.module == PracticeModule.STRUCTURED && it.itemId == id
+            },
+        )
+    }
+
+    fun deleteTemplate(id: String) = update { data ->
+        val template = data.templates.firstOrNull { it.id == id } ?: return@update data
+        template.practiceMedia.forEach { deletePracticeMediaFile(it.filePath) }
+        data.copy(
+            templates = data.templates.filterNot { it.id == id },
+            practiceEvents = data.practiceEvents.filterNot {
+                it.module == PracticeModule.TEMPLATE && it.itemId == id
+            },
+        )
+    }
+
+    fun deleteTrialBatch(ids: Set<String>) = update { data ->
+        if (ids.isEmpty()) return@update data
+        data.trials.filter { it.id in ids }.flatMap { it.practiceMedia }.forEach {
+            deletePracticeMediaFile(it.filePath)
+        }
+        data.copy(
+            trials = data.trials.filterNot { it.id in ids },
+            practiceEvents = data.practiceEvents.filterNot {
+                it.module == PracticeModule.TRIAL && it.itemId in ids
+            },
+        )
+    }
+
+    fun deleteStructuredBatch(ids: Set<String>) = update { data ->
+        if (ids.isEmpty()) return@update data
+        data.structuredQuestions.filter { it.id in ids }.flatMap { it.practiceMedia }.forEach {
+            deletePracticeMediaFile(it.filePath)
+        }
+        data.copy(
+            structuredQuestions = data.structuredQuestions.filterNot { it.id in ids },
+            practiceEvents = data.practiceEvents.filterNot {
+                it.module == PracticeModule.STRUCTURED && it.itemId in ids
+            },
+        )
+    }
+
+    fun deleteTemplateBatch(ids: Set<String>) = update { data ->
+        if (ids.isEmpty()) return@update data
+        data.templates.filter { it.id in ids }.flatMap { it.practiceMedia }.forEach {
+            deletePracticeMediaFile(it.filePath)
+        }
+        data.copy(
+            templates = data.templates.filterNot { it.id in ids },
+            practiceEvents = data.practiceEvents.filterNot {
+                it.module == PracticeModule.TEMPLATE && it.itemId in ids
+            },
+        )
     }
 
     fun recordTrialPractice(id: String) = update { data ->
@@ -492,6 +618,24 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun exportTemplate(id: String, onReady: (Uri) -> Unit) {
         val template = _uiState.value.data.templates.firstOrNull { it.id == id } ?: return
         exportMarkdown({ repository.exportTemplateMarkdown(template) }, onReady)
+    }
+
+    fun exportTrialBatch(ids: Set<String>, onReady: (Uri) -> Unit) {
+        val lessons = _uiState.value.data.trials.filter { it.id in ids }
+        if (lessons.isEmpty()) return
+        exportMarkdown({ repository.exportTrialMarkdown(lessons) }, onReady)
+    }
+
+    fun exportStructuredBatch(ids: Set<String>, onReady: (Uri) -> Unit) {
+        val questions = _uiState.value.data.structuredQuestions.filter { it.id in ids }
+        if (questions.isEmpty()) return
+        exportMarkdown({ repository.exportStructuredMarkdown(questions) }, onReady)
+    }
+
+    fun exportTemplateBatch(ids: Set<String>, onReady: (Uri) -> Unit) {
+        val templates = _uiState.value.data.templates.filter { it.id in ids }
+        if (templates.isEmpty()) return
+        exportMarkdown({ repository.exportTemplateMarkdown(templates) }, onReady)
     }
 
     fun clearMessage() {

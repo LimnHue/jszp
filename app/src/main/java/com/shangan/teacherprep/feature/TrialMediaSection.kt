@@ -319,16 +319,22 @@ private fun MediaItem(
         enableDismissFromEndToStart = true,
         backgroundContent = {
             Box(
-                Modifier.fillMaxWidth().background(Color(0xFFE55245), RoundedCornerShape(18.dp)).padding(18.dp),
+                Modifier.fillMaxWidth()
+                    .background(Color(0xFFE55245), RoundedCornerShape(18.dp))
+                    .padding(horizontal = 18.dp, vertical = 16.dp),
                 contentAlignment = Alignment.CenterEnd,
             ) {
-                Icon(Icons.Rounded.Delete, contentDescription = "删除", tint = Color.White)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("左滑删除", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    Spacer(Modifier.size(8.dp))
+                    Icon(Icons.Rounded.Delete, contentDescription = "删除", tint = Color.White)
+                }
             }
         },
     ) {
         Surface(
             shape = RoundedCornerShape(18.dp),
-            color = Color(0xFFE9EEF2).copy(alpha = .55f),
+            color = Color(0xFFF1F4F7),
         ) {
             Row(
                 Modifier.fillMaxWidth()

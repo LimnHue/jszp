@@ -3,9 +3,11 @@ package com.shangan.teacherprep.ui
 import android.media.MediaPlayer
 import android.speech.tts.TextToSpeech
 import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -33,21 +35,29 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.ChatBubbleOutline
+import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.RadioButtonUnchecked
 import androidx.compose.material.icons.rounded.RestartAlt
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Slideshow
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.StarBorder
+import androidx.compose.material.icons.rounded.SelectAll
 import androidx.compose.material.icons.rounded.UploadFile
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -55,7 +65,11 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Surface
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -110,7 +124,7 @@ enum class MainDestination(val label: String, val icon: ImageVector) {
 fun PrepBottomBar(selected: MainDestination, onSelect: (MainDestination) -> Unit) {
     val colors = LocalPrepColors.current
     NavigationBar(
-        modifier = Modifier.height(72.dp),
+        modifier = Modifier.height(64.dp),
         containerColor = Color(0xFFFCFBF8),
         tonalElevation = 0.dp,
     ) {
@@ -119,7 +133,7 @@ fun PrepBottomBar(selected: MainDestination, onSelect: (MainDestination) -> Unit
                 selected = selected == item,
                 onClick = { onSelect(item) },
                 icon = { Icon(item.icon, contentDescription = item.label) },
-                label = { Text(item.label, fontSize = 11.sp) },
+                label = { Text(item.label, fontSize = 10.sp) },
                 colors = NavigationBarItemDefaults.colors(
                     selectedIconColor = colors.primary,
                     selectedTextColor = colors.primary,
@@ -428,11 +442,13 @@ fun GradientActionButton(
     text: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    enabled: Boolean = true,
     start: Color = LocalPrepColors.current.primary,
     end: Color = LocalPrepColors.current.gradientEnd,
 ) {
     Button(
         onClick = onClick,
+        enabled = enabled,
         modifier = modifier.shadow(10.dp, RoundedCornerShape(22.dp)),
         shape = RoundedCornerShape(22.dp),
         colors = ButtonDefaults.buttonColors(containerColor = LocalPrepColors.current.primary),
@@ -480,7 +496,216 @@ fun RoundedCard(
         border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFDDD9D2)),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
-        Column(modifier = Modifier.padding(16.dp), content = content)
+        Column(modifier = Modifier.padding(14.dp), content = content)
+    }
+}
+
+@Composable
+@OptIn(ExperimentalFoundationApi::class)
+fun EditableSwipeCard(
+    itemLabel: String,
+    modifier: Modifier = Modifier,
+    containerColor: Color = Color.White.copy(alpha = LocalSurfaceOpacity.current),
+    selectionMode: Boolean = false,
+    selected: Boolean = false,
+    onSelectionChange: ((Boolean) -> Unit)? = null,
+    onOpen: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    var showActions by remember { mutableStateOf(false) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+    val dismissState = rememberSwipeToDismissBoxState(
+        confirmValueChange = { value ->
+            if (value == SwipeToDismissBoxValue.EndToStart) showDeleteConfirm = true
+            false
+        },
+        positionalThreshold = { distance -> distance * .3f },
+    )
+
+    SwipeToDismissBox(
+        state = dismissState,
+        enableDismissFromStartToEnd = false,
+        enableDismissFromEndToStart = true,
+        backgroundContent = {
+            Box(
+                Modifier.fillMaxWidth()
+                    .background(Color(0xFFE55245), RoundedCornerShape(14.dp))
+                    .padding(14.dp),
+                contentAlignment = Alignment.CenterEnd,
+            ) {
+                Icon(Icons.Rounded.Delete, contentDescription = "删除", tint = Color.White)
+            }
+        },
+        modifier = modifier.fillMaxWidth(),
+        gesturesEnabled = !selectionMode,
+    ) {
+        Card(
+            modifier = Modifier.fillMaxWidth().animateContentSize()
+                .combinedClickable(
+                    onClick = {
+                        if (selectionMode && onSelectionChange != null) {
+                            onSelectionChange(!selected)
+                        } else {
+                            onOpen()
+                        }
+                    },
+                    onLongClick = {
+                        if (onSelectionChange != null) {
+                            onSelectionChange(true)
+                        } else {
+                            showActions = true
+                        }
+                    },
+                ),
+            shape = RoundedCornerShape(14.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = if (selected) LocalPrepColors.current.primary.copy(alpha = .08f) else containerColor,
+            ),
+            border = androidx.compose.foundation.BorderStroke(
+                if (selected) 2.dp else 1.dp,
+                if (selected) LocalPrepColors.current.primary else Color(0xFFDDD9D2),
+            ),
+            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        ) {
+            Box {
+                Column(
+                    modifier = Modifier
+                        .padding(14.dp)
+                        .padding(end = if (selectionMode) 30.dp else 0.dp),
+                    content = content,
+                )
+                if (selectionMode) {
+                    Icon(
+                        imageVector = if (selected) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked,
+                        contentDescription = if (selected) "已选择" else "未选择",
+                        tint = if (selected) LocalPrepColors.current.primary else Color(0xFF9A9A9A),
+                        modifier = Modifier.align(Alignment.TopEnd).padding(12.dp).size(22.dp),
+                    )
+                }
+            }
+        }
+    }
+
+    if (showActions) {
+        AlertDialog(
+            onDismissRequest = { showActions = false },
+            title = { Text(itemLabel, fontWeight = FontWeight.Black) },
+            text = { Text("选择要执行的操作") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showActions = false
+                        onEdit()
+                    },
+                ) {
+                    Icon(Icons.Rounded.Edit, contentDescription = null)
+                    Text(" 编辑")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showActions = false
+                        showDeleteConfirm = true
+                    },
+                ) {
+                    Icon(Icons.Rounded.Delete, contentDescription = null, tint = Color(0xFFE55245))
+                    Text(" 删除", color = Color(0xFFE55245))
+                }
+            },
+        )
+    }
+
+    if (showDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            title = { Text("确认删除", fontWeight = FontWeight.Black) },
+            text = { Text("删除后无法恢复：$itemLabel") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteConfirm = false
+                        onDelete()
+                    },
+                ) {
+                    Text("删除", color = Color(0xFFE55245), fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false }) {
+                    Text("取消")
+                }
+            },
+        )
+    }
+}
+
+@Composable
+fun BatchActionBar(
+    selectedCount: Int,
+    totalCount: Int,
+    itemLabel: String,
+    modifier: Modifier = Modifier,
+    onSelectAll: () -> Unit,
+    onClear: () -> Unit,
+    onDelete: () -> Unit,
+    onExport: () -> Unit,
+) {
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        color = Color(0xFFFCFBF8),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFDDD9D2)),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            IconButton(onClick = onClear) {
+                Icon(Icons.Rounded.Close, contentDescription = "退出批量选择")
+            }
+            Text(
+                "已选 $selectedCount/$totalCount",
+                modifier = Modifier.weight(1f),
+                fontWeight = FontWeight.Black,
+                color = LocalPrepColors.current.primary,
+            )
+            IconButton(onClick = onSelectAll, enabled = totalCount > 0) {
+                Icon(Icons.Rounded.SelectAll, contentDescription = "全选")
+            }
+            IconButton(onClick = onExport, enabled = selectedCount > 0) {
+                Icon(Icons.Rounded.Share, contentDescription = "导出")
+            }
+            IconButton(onClick = { showDeleteConfirm = true }, enabled = selectedCount > 0) {
+                Icon(Icons.Rounded.Delete, contentDescription = "删除", tint = Color(0xFFE55245))
+            }
+        }
+    }
+    if (showDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            title = { Text("确认删除", fontWeight = FontWeight.Black) },
+            text = { Text("将删除已选的 $selectedCount 个$itemLabel，删除后无法恢复。") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteConfirm = false
+                        onDelete()
+                    },
+                ) {
+                    Text("删除", color = Color(0xFFE55245), fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false }) {
+                    Text("取消")
+                }
+            },
+        )
     }
 }
 

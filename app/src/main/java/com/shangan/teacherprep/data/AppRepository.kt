@@ -5,10 +5,12 @@ import android.net.Uri
 import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.File
+import java.util.UUID
 
 class AppRepository(private val context: Context) {
     private val storeFile = File(context.filesDir, "teacher_prep_library.json")
@@ -20,11 +22,11 @@ class AppRepository(private val context: Context) {
 
     suspend fun load(): AppData = withContext(Dispatchers.IO) {
         if (!storeFile.exists()) {
-            addBundledTrials(SampleData.create()).also(::saveBlocking)
+            addBundledStructured(addBundledTrials(SampleData.create())).also(::saveBlocking)
         } else {
             runCatching { json.decodeFromString<AppData>(storeFile.readText()) }
                 .map(::migrate)
-                .getOrElse { SampleData.create().also(::saveBlocking) }
+                .getOrElse { addBundledStructured(addBundledTrials(SampleData.create())).also(::saveBlocking) }
         }
     }
 
@@ -34,7 +36,7 @@ class AppRepository(private val context: Context) {
 
     suspend fun exportAll(data: AppData): Uri = withContext(Dispatchers.IO) {
         val exportDir = File(context.cacheDir, "exports").apply { mkdirs() }
-        val file = File(exportDir, "教招上岸_完整备考库.json")
+        val file = File(exportDir, "教招记录_完整备考库.json")
         file.writeText(json.encodeToString(data))
         FileProvider.getUriForFile(context, "${context.packageName}.files", file)
     }
@@ -44,11 +46,14 @@ class AppRepository(private val context: Context) {
             preferences = data.preferences.copy(selectedScope = scope),
             scopeConfigs = data.scopeConfigs.filterKeys { it == scope.key },
             trials = data.trials.filter { it.scopeKey == scope.key },
-            structuredQuestions = data.structuredQuestions.filter { it.scopeKey == scope.key },
-            templates = data.templates.filter { it.scopeKey == scope.key },
+            structuredQuestions = data.structuredQuestions.filter { it.scopeKey == SharedLibrary.key },
+            templates = data.templates.filter { it.scopeKey == SharedLibrary.key },
+            practiceEvents = data.practiceEvents.filter {
+                it.scopeKey == scope.key || it.scopeKey == SharedLibrary.key
+            },
         )
         val exportDir = File(context.cacheDir, "exports").apply { mkdirs() }
-        val file = File(exportDir, "教招上岸_${scope.stage}_${scope.subject}_${scope.textbookVersion}.json")
+        val file = File(exportDir, "教招记录_${scope.stage}_${scope.subject}_${scope.textbookVersion}.json")
         file.writeText(json.encodeToString(scoped))
         FileProvider.getUriForFile(context, "${context.packageName}.files", file)
     }
@@ -111,17 +116,114 @@ class AppRepository(private val context: Context) {
         exportMarkdown(template.name, markdown)
     }
 
+    suspend fun exportTrialMarkdown(lessons: List<TrialLesson>): Uri = withContext(Dispatchers.IO) {
+        exportMarkdown("批量试讲_${lessons.size}篇", lessons.joinToString("\n\n---\n\n") { buildTrialMarkdown(it) })
+    }
+
+    suspend fun exportStructuredMarkdown(questions: List<StructuredQuestion>): Uri = withContext(Dispatchers.IO) {
+        exportMarkdown("批量结构化_${questions.size}题", questions.joinToString("\n\n---\n\n") { buildStructuredMarkdown(it) })
+    }
+
+    suspend fun exportTemplateMarkdown(templates: List<AnswerTemplate>): Uri = withContext(Dispatchers.IO) {
+        exportMarkdown("批量模板_${templates.size}篇", templates.joinToString("\n\n---\n\n") { buildTemplateMarkdown(it) })
+    }
+
     suspend fun importBackup(uri: Uri, current: AppData): AppData = withContext(Dispatchers.IO) {
         val incoming = context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { reader ->
             json.decodeFromString<AppData>(reader.readText())
         } ?: error("无法读取备考库文件")
+        val importData = normalizeSharedLibraryItems(remapSingleScopeImportIfNeeded(incoming, current))
 
         // Imported libraries are merged by stable IDs so sharing never erases local notes.
         current.copy(
-            scopeConfigs = current.scopeConfigs + incoming.scopeConfigs,
-            trials = (current.trials + incoming.trials).distinctBy { it.id },
-            structuredQuestions = (current.structuredQuestions + incoming.structuredQuestions).distinctBy { it.id },
-            templates = (current.templates + incoming.templates).distinctBy { it.id },
+            scopeConfigs = current.scopeConfigs + importData.scopeConfigs.filterKeys { it != SharedLibrary.key },
+            trials = (current.trials + importData.trials).distinctBy { it.id },
+            structuredQuestions = (current.structuredQuestions + importData.structuredQuestions).distinctBy { it.id },
+            templates = (current.templates + importData.templates).distinctBy { it.id },
+        )
+    }
+
+    private fun remapSingleScopeImportIfNeeded(incoming: AppData, current: AppData): AppData {
+        val incomingScopeKeys = (
+            incoming.scopeConfigs.keys +
+                incoming.trials.map { it.scopeKey } +
+                incoming.structuredQuestions.map { it.scopeKey } +
+                incoming.templates.map { it.scopeKey }
+            )
+            .filter { it.isNotBlank() }
+            .filter { it != SharedLibrary.key }
+            .distinct()
+        if (incomingScopeKeys.size != 1) return incoming
+
+        val sourceScopeKey = incomingScopeKeys.single()
+        val targetScope = current.preferences.selectedScope
+        val targetScopeKey = targetScope.key
+        if (sourceScopeKey == targetScopeKey) return incoming
+
+        val currentConfig = current.scopeConfigs[targetScopeKey] ?: ScopeDefaults.create(targetScope)
+        val incomingConfig = incoming.scopeConfigs[sourceScopeKey] ?: ScopeConfig()
+        return incoming.copy(
+            preferences = incoming.preferences.copy(selectedScope = targetScope),
+            scopeConfigs = mapOf(targetScopeKey to mergeScopeConfig(currentConfig, incomingConfig)),
+            trials = incoming.trials.map {
+                it.copy(
+                    id = UUID.randomUUID().toString(),
+                    scopeKey = targetScopeKey,
+                    practiceMedia = emptyList(),
+                    practiceCount = 0,
+                    lastPracticedAt = null,
+                )
+            },
+            structuredQuestions = incoming.structuredQuestions.map {
+                it.copy(
+                    id = UUID.randomUUID().toString(),
+                    scopeKey = SharedLibrary.key,
+                    practiceMedia = emptyList(),
+                    practiceCount = 0,
+                    lastPracticedAt = null,
+                )
+            },
+            templates = incoming.templates.map {
+                it.copy(
+                    id = UUID.randomUUID().toString(),
+                    scopeKey = SharedLibrary.key,
+                    practiceMedia = emptyList(),
+                    practiceCount = 0,
+                    lastPracticedAt = null,
+                )
+            },
+            practiceEvents = emptyList(),
+        )
+    }
+
+    private fun normalizeSharedLibraryItems(data: AppData): AppData {
+        return data.copy(
+            scopeConfigs = data.scopeConfigs.filterKeys { it != SharedLibrary.key },
+            structuredQuestions = data.structuredQuestions.map { it.copy(scopeKey = SharedLibrary.key) },
+            templates = data.templates.map { it.copy(scopeKey = SharedLibrary.key) },
+            practiceEvents = data.practiceEvents.map { event ->
+                when (event.module) {
+                    PracticeModule.STRUCTURED,
+                    PracticeModule.TEMPLATE,
+                    -> event.copy(scopeKey = SharedLibrary.key)
+                    PracticeModule.TRIAL -> event
+                }
+            },
+        )
+    }
+
+    private fun mergeScopeConfig(current: ScopeConfig, incoming: ScopeConfig): ScopeConfig {
+        fun mergeValues(a: List<String>, b: List<String>): List<String> {
+            return (a + b).map { it.trim() }.filter { it.isNotBlank() }.distinct()
+        }
+        return current.copy(
+            textbooks = mergeValues(current.textbooks, incoming.textbooks),
+            units = mergeValues(current.units, incoming.units),
+            genres = mergeValues(current.genres, incoming.genres),
+            structuredTypes = mergeValues(current.structuredTypes, incoming.structuredTypes),
+            templateTypes = mergeValues(current.templateTypes, incoming.templateTypes),
+            trialSectionNames = mergeValues(current.trialSectionNames, incoming.trialSectionNames),
+            structuredSectionNames = mergeValues(current.structuredSectionNames, incoming.structuredSectionNames),
         )
     }
 
@@ -138,6 +240,55 @@ class AppRepository(private val context: Context) {
         val file = File(exportDir, "$safeTitle.md")
         file.writeText(markdown)
         return FileProvider.getUriForFile(context, "${context.packageName}.files", file)
+    }
+
+    private fun buildTrialMarkdown(lesson: TrialLesson): String = buildString {
+        appendLine("# ${lesson.title}")
+        appendLine()
+        appendLine("- 教材：${lesson.textbook}")
+        if (lesson.unit.isNotBlank()) appendLine("- 单元：${lesson.unit}")
+        if (lesson.lessonOrder > 0) appendLine("- 课次：第${lesson.lessonOrder}课")
+        appendLine("- 题材：${lesson.genre}")
+        appendLine("- 试讲时长：${lesson.durationMinutes}分钟")
+        appendLine()
+        appendLine("## 课程信息")
+        appendLine()
+        appendLine(lesson.courseInfoMarkdown)
+        lesson.bodySections.forEach { section ->
+            appendLine()
+            appendLine("## ${section.title}")
+            appendLine()
+            appendLine(section.markdown)
+        }
+        lesson.boardImageUri?.let {
+            appendLine()
+            appendLine("## 板书设计")
+            appendLine()
+            appendLine("板书图片：$it")
+        }
+    }
+
+    private fun buildStructuredMarkdown(question: StructuredQuestion): String = buildString {
+        appendLine("# ${question.question}")
+        appendLine()
+        appendLine("- 类型：${question.category}")
+        appendLine("- 重要程度：${question.importance}星")
+        appendLine("- 建议时长：${question.durationMinutes}分钟")
+        question.answerSections.forEach { section ->
+            appendLine()
+            appendLine("## ${section.title}")
+            appendLine()
+            appendLine(section.markdown)
+        }
+    }
+
+    private fun buildTemplateMarkdown(template: AnswerTemplate): String = buildString {
+        appendLine("# ${template.name}")
+        appendLine()
+        appendLine("- 类型：${template.category}")
+        if (template.module.isNotBlank()) appendLine("- 模块：${template.module}")
+        appendLine()
+        appendLine(template.contentMarkdown)
     }
 
     private fun migrate(data: AppData): AppData {
@@ -172,8 +323,72 @@ class AppRepository(private val context: Context) {
                 ),
             )
         }
-        if (originalVersion >= 14) return data
-        return migrated.copy(schemaVersion = 14).also(::saveBlocking)
+        if (originalVersion < 15) {
+            migrated = normalizeSharedLibraryItems(migrated)
+        }
+        if (originalVersion < 16) {
+            migrated = addBundledStructured(migrated)
+        }
+        if (originalVersion < 17) {
+            migrated = compactDefaultAppearance(migrated)
+        }
+        if (originalVersion >= 17) return data
+        return migrated.copy(schemaVersion = 17).also(::saveBlocking)
+    }
+
+    private fun compactDefaultAppearance(data: AppData): AppData {
+        val preferences = data.preferences
+        return data.copy(
+            schemaVersion = 17,
+            preferences = preferences.copy(
+                logoScale = if (preferences.logoScale == 1f) 0.86f else preferences.logoScale,
+                uiScale = if (preferences.uiScale == 1f) 0.92f else preferences.uiScale,
+                fontScale = if (preferences.fontScale == 1f) 0.93f else preferences.fontScale,
+            ),
+        )
+    }
+
+    private fun addBundledStructured(data: AppData): AppData {
+        val assetDirectory = "structured_questions"
+        val bundled = context.assets.list(assetDirectory)
+            .orEmpty()
+            .filter { it.endsWith(".json", ignoreCase = true) }
+            .flatMap { fileName ->
+                val path = "$assetDirectory/$fileName"
+                val content = context.assets.open(path).bufferedReader().use { it.readText() }
+                json.decodeFromString<List<BundledStructuredQuestion>>(content)
+            }
+        if (bundled.isEmpty()) return data.copy(schemaVersion = 17)
+
+        val existingIds = data.structuredQuestions.map { it.id }.toSet()
+        val existingQuestions = data.structuredQuestions.map { normalizeTitle(it.question) }.toSet()
+        val additions = bundled
+            .filter { it.id !in existingIds && normalizeTitle(it.question) !in existingQuestions }
+            .map { item ->
+                StructuredQuestion(
+                    id = item.id,
+                    scopeKey = SharedLibrary.key,
+                    category = item.category,
+                    question = item.question,
+                    answerSections = listOf(
+                        ContentSection(
+                            id = "${item.id}_answer",
+                            title = "逐字稿参考答案",
+                            markdown = item.answerMarkdown,
+                        ),
+                    ),
+                    durationMinutes = data.preferences.defaultStructuredMinutes,
+                    importance = item.importance.coerceIn(1, 5),
+                )
+            }
+        val bundledCategories = bundled.map { it.category }.filter { it.isNotBlank() }
+        return data.copy(
+            schemaVersion = 17,
+            scopeConfigs = data.scopeConfigs.mapValues { (_, config) ->
+                config.copy(structuredTypes = (config.structuredTypes + bundledCategories).distinct())
+            },
+            structuredQuestions = data.structuredQuestions + additions,
+        )
     }
 
     private fun addBundledTrials(data: AppData): AppData {
@@ -203,7 +418,7 @@ class AppRepository(private val context: Context) {
         val bundledTextbooks = bundled.map { it.textbook }
         val bundledGenres = bundled.map { it.genre }
         return data.copy(
-            schemaVersion = 14,
+            schemaVersion = 17,
             scopeConfigs = data.scopeConfigs + (
                 scopeKey to currentConfig.copy(
                     textbooks = (currentConfig.textbooks + bundledTextbooks).distinct(),
@@ -234,7 +449,7 @@ class AppRepository(private val context: Context) {
             else lesson.copy(unit = unitsByTitle[normalizeTitle(lesson.title)] ?: "其他")
         }
         return data.copy(
-            schemaVersion = 14,
+            schemaVersion = 17,
             trials = trials,
             scopeConfigs = data.scopeConfigs.mapValues { (scopeKey, config) ->
                 val scopeUnits = trials.filter { it.scopeKey == scopeKey }.map { it.unit }.filter { it.isNotBlank() }
@@ -264,7 +479,7 @@ class AppRepository(private val context: Context) {
             newKey to migratedConfig
         }
         return data.copy(
-            schemaVersion = 14,
+            schemaVersion = 17,
             preferences = data.preferences.copy(
                 selectedScope = data.preferences.selectedScope.copy(
                     textbookVersion = data.preferences.selectedScope.textbookVersion.ifBlank { "人教版" },
@@ -272,8 +487,8 @@ class AppRepository(private val context: Context) {
             ),
             scopeConfigs = configs,
             trials = data.trials.map { it.copy(scopeKey = migrateKey(it.scopeKey)) },
-            structuredQuestions = data.structuredQuestions.map { it.copy(scopeKey = migrateKey(it.scopeKey)) },
-            templates = data.templates.map { it.copy(scopeKey = migrateKey(it.scopeKey)) },
+            structuredQuestions = data.structuredQuestions.map { it.copy(scopeKey = SharedLibrary.key) },
+            templates = data.templates.map { it.copy(scopeKey = SharedLibrary.key) },
         )
     }
 
@@ -334,3 +549,12 @@ class AppRepository(private val context: Context) {
         )
     }
 }
+
+@Serializable
+private data class BundledStructuredQuestion(
+    val id: String,
+    val category: String,
+    val question: String,
+    val answerMarkdown: String,
+    val importance: Int = 3,
+)

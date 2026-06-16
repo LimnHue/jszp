@@ -22,6 +22,7 @@ import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.UploadFile
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -31,6 +32,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -44,16 +46,28 @@ import com.shangan.teacherprep.ImportModule
 import com.shangan.teacherprep.data.AppData
 import com.shangan.teacherprep.data.ContentSection
 import com.shangan.teacherprep.data.ScopeConfig
+import com.shangan.teacherprep.data.StructuredImportItem
+import com.shangan.teacherprep.data.TrialImportItem
 import com.shangan.teacherprep.ui.FilterChips
 import com.shangan.teacherprep.ui.GradientActionButton
 import com.shangan.teacherprep.ui.ImportanceStars
 import com.shangan.teacherprep.ui.RoundedCard
 import com.shangan.teacherprep.ui.ScreenHeader
 import com.shangan.teacherprep.ui.DraggableScrollToTopButton
-import com.shangan.teacherprep.ui.observeHorizontalSwipe
+import com.shangan.teacherprep.util.BatchDocumentItem
+import com.shangan.teacherprep.util.BatchImportParser
 import com.shangan.teacherprep.util.DocumentParser
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private enum class EditorMode { VISUAL, MARKDOWN }
+
+private data class ParsedImportDocument(
+    val markdown: String,
+    val visualSections: List<VisualSection>,
+    val batchItems: List<BatchDocumentItem>,
+)
 
 @Composable
 fun ImportScreen(
@@ -63,7 +77,9 @@ fun ImportScreen(
     modifier: Modifier = Modifier,
     onBack: () -> Unit,
     onAddTrial: (String, String, String, Int, String, String, List<ContentSection>, String?, Int) -> Unit,
+    onAddTrialBatch: (String, String, Int, String, List<TrialImportItem>, String?, Int) -> Unit,
     onAddStructured: (String, String, List<ContentSection>, Int) -> Unit,
+    onAddStructuredBatch: (String, List<StructuredImportItem>, Int) -> Unit,
     onAddTemplate: (String, String, String) -> Unit,
     onUpdateTrial: (String, String, String, String, Int, String, String, List<ContentSection>, String?, Int) -> Unit,
     onUpdateStructured: (String, String, String, List<ContentSection>, Int) -> Unit,
@@ -71,6 +87,7 @@ fun ImportScreen(
     onComplete: () -> Unit,
 ) {
     val context = LocalContext.current
+    val importScope = rememberCoroutineScope()
     val config = data.scopeConfigs[data.preferences.selectedScope.key]
         ?: com.shangan.teacherprep.data.ScopeDefaults.create(data.preferences.selectedScope)
     val existingTrial = data.trials.firstOrNull { it.id == editingId }
@@ -93,6 +110,8 @@ fun ImportScreen(
     var visualSections by remember(editingId) {
         mutableStateOf(VisualEditorCodec.parse(initialMarkdown, defaultSectionTitle(module, config)))
     }
+    var batchItems by remember(editingId, module) { mutableStateOf<List<BatchDocumentItem>>(emptyList()) }
+    var isImportingFile by remember(editingId, module) { mutableStateOf(false) }
     var fileName by remember { mutableStateOf<String?>(null) }
     var textbook by remember(editingId) {
         mutableStateOf(existingTrial?.textbook ?: config.textbooks.firstOrNull().orEmpty())
@@ -127,8 +146,35 @@ fun ImportScreen(
                 if (cursor.moveToFirst() && index >= 0) cursor.getString(index) else "导入文档"
             } ?: "导入文档"
             fileName = name
-            markdown = runCatching { DocumentParser.readText(context.contentResolver, it, name) }.getOrElse { "读取失败：${it.message}" }
-            visualSections = VisualEditorCodec.parse(markdown, defaultSectionTitle(module, config))
+            markdown = ""
+            visualSections = listOf(VisualSection(title = defaultSectionTitle(module, config)))
+            batchItems = emptyList()
+            isImportingFile = true
+            val appContext = context.applicationContext
+            importScope.launch {
+                val result = runCatching {
+                    val parsedText = withContext(Dispatchers.IO) {
+                        DocumentParser.readText(appContext, it, name)
+                    }
+                    val parsedSections = withContext(Dispatchers.Default) {
+                        VisualEditorCodec.parse(parsedText, defaultSectionTitle(module, config))
+                    }
+                    val parsedBatchItems = withContext(Dispatchers.Default) {
+                        if (editing) emptyList() else parseBatchItems(module, parsedText)
+                    }
+                    ParsedImportDocument(parsedText, parsedSections, parsedBatchItems)
+                }
+                result.onSuccess { parsed ->
+                    markdown = parsed.markdown
+                    visualSections = parsed.visualSections
+                    batchItems = parsed.batchItems
+                }.onFailure { error ->
+                    markdown = "读取失败：${error.message ?: "文件解析异常"}"
+                    visualSections = VisualEditorCodec.parse(markdown, defaultSectionTitle(module, config))
+                    batchItems = emptyList()
+                }
+                isImportingFile = false
+            }
             if (title.isBlank()) title = name.substringBeforeLast('.')
         }
     }
@@ -144,8 +190,7 @@ fun ImportScreen(
 
     Box(
         modifier.fillMaxSize()
-            .background(MaterialTheme.colorScheme.primary.copy(alpha = .025f))
-            .observeHorizontalSwipe(onSwipeLeft = onBack),
+            .background(MaterialTheme.colorScheme.primary.copy(alpha = .025f)),
     ) {
         Column(Modifier.fillMaxSize()) {
             ScreenHeader(if (editing) "修改内容" else "导入内容", onBack = onBack)
@@ -160,12 +205,25 @@ fun ImportScreen(
             )
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 ImportMethodCard("导入文档", Icons.Rounded.Description, fileName != null, Modifier.weight(1f)) {
-                    documentPicker.launch(arrayOf("text/markdown", "text/plain", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"))
+                    documentPicker.launch(arrayOf("text/markdown", "text/plain", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/pdf"))
                 }
                 ImportMethodCard("手动新建", Icons.Rounded.Edit, fileName == null, Modifier.weight(1f)) {
                     fileName = null
                     markdown = ""
+                    batchItems = emptyList()
+                    isImportingFile = false
                     visualSections = listOf(VisualSection(title = defaultSectionTitle(module, config)))
+                }
+            }
+            if (isImportingFile) {
+                RoundedCard(Modifier.fillMaxWidth()) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.padding(end = 12.dp),
+                            strokeWidth = 3.dp,
+                        )
+                        Text("正在解析文件，请稍等", fontWeight = FontWeight.Bold)
+                    }
                 }
             }
             fileName?.let {
@@ -269,10 +327,43 @@ fun ImportScreen(
                     }
                 }
             }
+            if (!editing && batchItems.size > 1 && (module == ImportModule.TRIAL || module == ImportModule.STRUCTURED)) {
+                BatchImportPreview(
+                    module = module,
+                    items = batchItems,
+                    onImport = {
+                        when (module) {
+                            ImportModule.TRIAL -> {
+                                val drafts = batchItems.map { item ->
+                                    buildTrialImportItem(item, title, textbook, unit, lessonOrder.toIntOrNull() ?: 0, category, config)
+                                }
+                                onAddTrialBatch(textbook, unit, lessonOrder.toIntOrNull() ?: 0, category, drafts, boardUri, importance)
+                            }
+                            ImportModule.STRUCTURED -> {
+                                val drafts = batchItems.map { item ->
+                                    StructuredImportItem(
+                                        question = item.title,
+                                        answerSections = listOf(
+                                            ContentSection(
+                                                title = config.structuredSectionNames.lastOrNull() ?: "参考答案",
+                                                markdown = item.markdown,
+                                            ),
+                                        ),
+                                    )
+                                }
+                                onAddStructuredBatch(category, drafts, importance)
+                            }
+                            else -> Unit
+                        }
+                        onComplete()
+                    },
+                )
+            }
             Spacer(Modifier.height(4.dp))
             GradientActionButton(
                 text = if (editing) "保存修改" else "开始导入",
                 modifier = Modifier.fillMaxWidth(),
+                enabled = !isImportingFile,
                 onClick = {
                     val effectiveMarkdown = if (editorMode == EditorMode.VISUAL) {
                         VisualEditorCodec.toMarkdown(visualSections)
@@ -328,7 +419,7 @@ fun ImportScreen(
                 },
             )
             Text(
-                "默认使用分段编辑，也可切换到文本编辑进行批量排版。支持 .md、.txt、.docx。",
+                "默认使用分段编辑，也可切换到文本编辑进行批量排版。支持 .md、.txt、.docx、.pdf。",
                 color = Color.Gray,
                 fontSize = 12.sp,
                 modifier = Modifier.padding(bottom = 30.dp),
@@ -386,6 +477,39 @@ private fun titleLabel(module: ImportModule): String = when (module) {
     ImportModule.BACKUP -> "名称"
 }
 
+@Composable
+private fun BatchImportPreview(
+    module: ImportModule,
+    items: List<BatchDocumentItem>,
+    onImport: () -> Unit,
+) {
+    RoundedCard(Modifier.fillMaxWidth()) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(
+                text = "已识别 ${items.size} 条${if (module == ImportModule.TRIAL) "试讲" else "结构化"}内容",
+                fontWeight = FontWeight.Black,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            items.take(5).forEachIndexed { index, item ->
+                Text(
+                    text = "${index + 1}. ${item.title}",
+                    color = Color(0xFF55565D),
+                    fontSize = 13.sp,
+                    maxLines = 2,
+                )
+            }
+            if (items.size > 5) {
+                Text("还有 ${items.size - 5} 条将一起导入", color = Color.Gray, fontSize = 12.sp)
+            }
+            GradientActionButton(
+                text = "批量导入 ${items.size} 条",
+                modifier = Modifier.fillMaxWidth(),
+                onClick = onImport,
+            )
+        }
+    }
+}
+
 private fun buildSectionMarkdown(sections: List<ContentSection>): String {
     return sections.joinToString("\n\n") { "# ${it.title}\n${it.markdown}" }
 }
@@ -402,4 +526,48 @@ private fun defaultSectionTitle(module: ImportModule, config: ScopeConfig): Stri
     ImportModule.STRUCTURED -> config.structuredSectionNames.firstOrNull() ?: "答题思路"
     ImportModule.TEMPLATE -> "模板正文"
     ImportModule.BACKUP -> "正文"
+}
+
+private fun parseBatchItems(module: ImportModule, markdown: String): List<BatchDocumentItem> {
+    return when (module) {
+        ImportModule.TRIAL -> BatchImportParser.parseTrial(markdown)
+        ImportModule.STRUCTURED -> BatchImportParser.parseStructured(markdown)
+        else -> emptyList()
+    }
+}
+
+private fun buildTrialImportItem(
+    item: BatchDocumentItem,
+    fallbackTitle: String,
+    textbook: String,
+    unit: String,
+    lessonOrder: Int,
+    category: String,
+    config: ScopeConfig,
+): TrialImportItem {
+    val parsed = DocumentParser.splitMarkdown(item.markdown, listOf("课程信息") + config.trialSectionNames)
+    val courseTitles = setOf("课程信息", "教学目标", "教学重点", "教学难点")
+    val courseParts = parsed.filter { section ->
+        courseTitles.any { section.title.contains(it) }
+    }
+    val body = parsed.filterNot { it in courseParts }.ifEmpty {
+        listOf(ContentSection(title = config.trialSectionNames.firstOrNull() ?: "正文", markdown = item.markdown))
+    }
+    val courseInfo = courseParts.joinToString("\n\n") { "# ${it.title}\n${it.markdown}" }
+        .ifBlank {
+            buildString {
+                appendLine("# 课程信息")
+                appendLine(item.title.ifBlank { fallbackTitle })
+                appendLine()
+                appendLine("- 教材：$textbook")
+                appendLine("- 单元：$unit")
+                if (lessonOrder > 0) appendLine("- 课时：第${lessonOrder}课")
+                appendLine("- 题材：$category")
+            }.trim()
+        }
+    return TrialImportItem(
+        title = item.title.ifBlank { fallbackTitle },
+        courseInfoMarkdown = courseInfo,
+        bodySections = body,
+    )
 }

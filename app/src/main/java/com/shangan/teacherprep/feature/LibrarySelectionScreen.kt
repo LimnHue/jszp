@@ -68,20 +68,20 @@ fun LibrarySelectionScreen(
             Column(
             modifier = Modifier.weight(1f).verticalScroll(scrollState).padding(horizontal = 20.dp),
         ) {
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(18.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                BrandMark(size = 46)
-                Text("  教招上岸", fontSize = 24.sp, fontWeight = FontWeight.Black)
+                BrandMark(size = 38)
+                Text("  教招记录", fontSize = 20.sp, fontWeight = FontWeight.Black)
             }
-            Spacer(Modifier.height(26.dp))
-            Text("选择你的备考题库", fontSize = 38.sp, lineHeight = 44.sp, fontWeight = FontWeight.Black)
-            Text("以后可以随时切换，每个组合都是独立资料库", color = Color.Gray, modifier = Modifier.padding(top = 10.dp))
-            Spacer(Modifier.height(30.dp))
+            Spacer(Modifier.height(18.dp))
+            Text("选择你的备考题库", fontSize = 30.sp, lineHeight = 36.sp, fontWeight = FontWeight.Black)
+            Text("以后可以随时切换，每个组合都是独立资料库", color = Color.Gray, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp))
+            Spacer(Modifier.height(22.dp))
 
             SelectionPanel("学段", data.preferences.stages, stage, { stage = it }, { adding = "学段" })
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(12.dp))
             SelectionPanel("学科", data.preferences.subjects, subject, { subject = it }, { adding = "学科" })
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(12.dp))
             SelectionPanel(
                 "教材版本",
                 data.preferences.textbookVersions,
@@ -89,13 +89,13 @@ fun LibrarySelectionScreen(
                 { textbookVersion = it },
                 { adding = "教材版本" },
             )
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(18.dp))
         }
             Surface(color = Color.White.copy(alpha = .97f), shadowElevation = 8.dp) {
                 GradientActionButton(
                     text = "进入题库",
                     onClick = { onEnter(LibraryScope(stage, subject, textbookVersion)) },
-                    modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp, vertical = 14.dp),
+                    modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp, vertical = 10.dp),
                 )
             }
         }

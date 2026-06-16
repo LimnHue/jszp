@@ -12,6 +12,11 @@ data class LibraryScope(
     val key: String get() = "$stage::$subject::$textbookVersion"
 }
 
+object SharedLibrary {
+    val scope = LibraryScope("共享", "通用", "通用")
+    val key: String = scope.key
+}
+
 @Serializable
 data class ContentSection(
     val id: String = UUID.randomUUID().toString(),
@@ -197,14 +202,14 @@ data class AppPreferences(
     val randomDrawSelections: Map<String, Map<String, List<String>>> = emptyMap(),
     val palette: PaletteStyle = PaletteStyle.CORAL,
     val surfaceOpacity: Float = 0.96f,
-    val logoScale: Float = 1f,
-    val uiScale: Float = 1f,
-    val fontScale: Float = 1f,
+    val logoScale: Float = 0.86f,
+    val uiScale: Float = 0.92f,
+    val fontScale: Float = 0.93f,
 )
 
 @Serializable
 data class AppData(
-    val schemaVersion: Int = 14,
+    val schemaVersion: Int = 17,
     val preferences: AppPreferences = AppPreferences(),
     val scopeConfigs: Map<String, ScopeConfig> = emptyMap(),
     val trials: List<TrialLesson> = emptyList(),

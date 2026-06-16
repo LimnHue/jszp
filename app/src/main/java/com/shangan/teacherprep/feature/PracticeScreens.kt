@@ -32,6 +32,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -48,9 +49,12 @@ import com.shangan.teacherprep.data.AppData
 import com.shangan.teacherprep.data.AppPreferences
 import com.shangan.teacherprep.data.PracticeMediaType
 import com.shangan.teacherprep.data.PracticeModule
+import com.shangan.teacherprep.data.SharedLibrary
 import com.shangan.teacherprep.data.StructuredQuestion
+import com.shangan.teacherprep.ui.BatchActionBar
 import com.shangan.teacherprep.ui.FilterChips
 import com.shangan.teacherprep.ui.DraggableScrollToTopButton
+import com.shangan.teacherprep.ui.EditableSwipeCard
 import com.shangan.teacherprep.ui.ImportanceStars
 import com.shangan.teacherprep.ui.MarkdownText
 import com.shangan.teacherprep.ui.ModuleImportEntry
@@ -65,7 +69,6 @@ import com.shangan.teacherprep.ui.ScreenHeader
 import com.shangan.teacherprep.ui.SectionPanel
 import com.shangan.teacherprep.ui.practiceHistoryText
 import com.shangan.teacherprep.ui.theme.LocalPrepColors
-import com.shangan.teacherprep.ui.observeHorizontalSwipe
 
 @Composable
 fun StructuredScreen(
@@ -74,6 +77,10 @@ fun StructuredScreen(
     onSwitchScope: () -> Unit,
     onImport: () -> Unit,
     onOpen: (String) -> Unit,
+    onEdit: (String) -> Unit,
+    onDelete: (String) -> Unit,
+    onDeleteBatch: (Set<String>) -> Unit,
+    onExportBatch: (Set<String>) -> Unit,
     onUpdateDrawSelections: (PracticeModule, Map<String, Set<String>>) -> Unit,
 ) {
     val scope = data.preferences.selectedScope
@@ -82,7 +89,9 @@ fun StructuredScreen(
     var category by remember { mutableStateOf("全部") }
     var importance by remember { mutableStateOf("全部") }
     var showDrawDialog by remember { mutableStateOf(false) }
-    val scopeItems = data.structuredQuestions.filter { it.scopeKey == scope.key }
+    var batchMode by remember { mutableStateOf(false) }
+    var selectedIds by remember { mutableStateOf(setOf<String>()) }
+    val scopeItems = data.structuredQuestions.filter { it.scopeKey == SharedLibrary.key }
     val drawGroups = listOf(
         RandomDrawGroup("category", "问题种类", scopeItems.map { it.category }.distinct()),
         RandomDrawGroup("importance", "重要程度", scopeItems.map { "${it.importance} 星" }.distinct().sortedDescending()),
@@ -93,12 +102,18 @@ fun StructuredScreen(
             mapOf("category" to it.category, "importance" to "${it.importance} 星"),
         )
     }
-    val drawSelections = savedRandomDrawSelections(data.preferences, scope.key, PracticeModule.STRUCTURED)
+    val drawSelections = savedRandomDrawSelections(data.preferences, SharedLibrary.key, PracticeModule.STRUCTURED)
     val filtered = scopeItems.filter {
         (!visibility.structuredCategory || category == "全部" || it.category == category) &&
             (!visibility.structuredImportance || importance == "全部" || it.importance == importance.substringBefore("星").trim().toIntOrNull())
     }
     val listState = rememberLazyListState()
+    val visibleIds = remember(filtered) { filtered.map { it.id }.toSet() }
+
+    LaunchedEffect(visibleIds) {
+        selectedIds = selectedIds.intersect(visibleIds)
+        if (visibleIds.isEmpty()) batchMode = false
+    }
 
     Scaffold(containerColor = Color(0xFFF7F5F1)) { inner ->
         Box(Modifier.fillMaxSize()) {
@@ -181,10 +196,40 @@ fun StructuredScreen(
                 item {
                     Text("题目列表 · ${filtered.size} 条", Modifier.padding(horizontal = 20.dp), fontSize = 21.sp, fontWeight = FontWeight.Black)
                 }
+                if (batchMode) {
+                    item {
+                        BatchActionBar(
+                            selectedCount = selectedIds.size,
+                            totalCount = filtered.size,
+                            itemLabel = "结构化",
+                            modifier = Modifier.padding(horizontal = 20.dp),
+                            onSelectAll = { selectedIds = visibleIds },
+                            onClear = {
+                                batchMode = false
+                                selectedIds = emptySet()
+                            },
+                            onDelete = {
+                                onDeleteBatch(selectedIds)
+                                batchMode = false
+                                selectedIds = emptySet()
+                            },
+                            onExport = { onExportBatch(selectedIds) },
+                        )
+                    }
+                }
                 items(filtered, key = { it.id }) { item ->
-                    RoundedCard(
-                        Modifier.fillMaxWidth().padding(horizontal = 20.dp),
-                        onClick = { onOpen(item.id) },
+                    EditableSwipeCard(
+                        itemLabel = item.question,
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+                        selectionMode = batchMode,
+                        selected = item.id in selectedIds,
+                        onSelectionChange = { selected ->
+                            batchMode = true
+                            selectedIds = if (selected) selectedIds + item.id else selectedIds - item.id
+                        },
+                        onOpen = { onOpen(item.id) },
+                        onEdit = { onEdit(item.id) },
+                        onDelete = { onDelete(item.id) },
                         containerColor = Color.White,
                     ) {
                         Surface(shape = RoundedCornerShape(50), color = Color(0xFFE9EEF2)) {
@@ -257,7 +302,7 @@ fun StructuredDetailScreen(
             PracticeTimer(preferences, question.durationMinutes, Modifier.padding(horizontal = 20.dp, vertical = 12.dp), onPracticeStarted = onPractice)
         },
     ) { padding ->
-        Box(Modifier.fillMaxSize().observeHorizontalSwipe(onSwipeLeft = onBack)) {
+        Box(Modifier.fillMaxSize()) {
             LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize(),
@@ -316,6 +361,10 @@ fun TemplateScreen(
     onSwitchScope: () -> Unit,
     onImport: () -> Unit,
     onOpen: (String) -> Unit,
+    onEdit: (String) -> Unit,
+    onDelete: (String) -> Unit,
+    onDeleteBatch: (Set<String>) -> Unit,
+    onExportBatch: (Set<String>) -> Unit,
     onUpdateDrawSelections: (PracticeModule, Map<String, Set<String>>) -> Unit,
 ) {
     val scope = data.preferences.selectedScope
@@ -324,7 +373,9 @@ fun TemplateScreen(
     var query by remember { mutableStateOf("") }
     var category by remember { mutableStateOf("全部") }
     var showDrawDialog by remember { mutableStateOf(false) }
-    val scopeItems = data.templates.filter { it.scopeKey == scope.key }
+    var batchMode by remember { mutableStateOf(false) }
+    var selectedIds by remember { mutableStateOf(setOf<String>()) }
+    val scopeItems = data.templates.filter { it.scopeKey == SharedLibrary.key }
     val drawGroups = listOf(
         RandomDrawGroup("category", "模板种类", scopeItems.map { it.category }.distinct()),
         RandomDrawGroup("module", "适用模块", scopeItems.map { it.module }.filter { it.isNotBlank() }.distinct()),
@@ -335,12 +386,18 @@ fun TemplateScreen(
             mapOf("category" to it.category, "module" to it.module),
         )
     }
-    val drawSelections = savedRandomDrawSelections(data.preferences, scope.key, PracticeModule.TEMPLATE)
+    val drawSelections = savedRandomDrawSelections(data.preferences, SharedLibrary.key, PracticeModule.TEMPLATE)
     val filtered = scopeItems.filter {
         (!visibility.templateCategory || category == "全部" || it.category == category) &&
             (!visibility.templateSearch || query.isBlank() || it.name.contains(query, true) || it.contentMarkdown.contains(query, true))
     }
     val listState = rememberLazyListState()
+    val visibleIds = remember(filtered) { filtered.map { it.id }.toSet() }
+
+    LaunchedEffect(visibleIds) {
+        selectedIds = selectedIds.intersect(visibleIds)
+        if (visibleIds.isEmpty()) batchMode = false
+    }
 
     Scaffold(containerColor = Color(0xFFF7F5F1)) { inner ->
         Box(Modifier.fillMaxSize()) {
@@ -416,8 +473,40 @@ fun TemplateScreen(
             if (filtered.isEmpty()) {
                 item { EmptyPracticeState("当前题库还没有模板", onImport) }
             } else {
+                if (batchMode) {
+                    item {
+                        BatchActionBar(
+                            selectedCount = selectedIds.size,
+                            totalCount = filtered.size,
+                            itemLabel = "模板",
+                            modifier = Modifier.padding(horizontal = 20.dp),
+                            onSelectAll = { selectedIds = visibleIds },
+                            onClear = {
+                                batchMode = false
+                                selectedIds = emptySet()
+                            },
+                            onDelete = {
+                                onDeleteBatch(selectedIds)
+                                batchMode = false
+                                selectedIds = emptySet()
+                            },
+                            onExport = { onExportBatch(selectedIds) },
+                        )
+                    }
+                }
                 items(filtered, key = { it.id }) { item ->
-                    TemplateCard(item = item, onClick = { onOpen(item.id) })
+                    TemplateCard(
+                        item = item,
+                        selectionMode = batchMode,
+                        selected = item.id in selectedIds,
+                        onSelectionChange = { selected ->
+                            batchMode = true
+                            selectedIds = if (selected) selectedIds + item.id else selectedIds - item.id
+                        },
+                        onClick = { onOpen(item.id) },
+                        onEdit = { onEdit(item.id) },
+                        onDelete = { onDelete(item.id) },
+                    )
                 }
             }
             }
@@ -481,7 +570,7 @@ fun TemplateDetailScreen(
             PracticeTimer(preferences, preferences.defaultStructuredMinutes, Modifier.padding(horizontal = 20.dp, vertical = 12.dp), onPracticeStarted = onPractice)
         },
     ) { padding ->
-        Box(Modifier.fillMaxSize().observeHorizontalSwipe(onSwipeLeft = onBack)) {
+        Box(Modifier.fillMaxSize()) {
             LazyColumn(
             state = listState,
             contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = padding.calculateTopPadding() + 8.dp, bottom = padding.calculateBottomPadding() + 20.dp),
@@ -517,10 +606,24 @@ fun TemplateDetailScreen(
 }
 
 @Composable
-private fun TemplateCard(item: AnswerTemplate, onClick: () -> Unit) {
-    RoundedCard(
+private fun TemplateCard(
+    item: AnswerTemplate,
+    selectionMode: Boolean,
+    selected: Boolean,
+    onSelectionChange: (Boolean) -> Unit,
+    onClick: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    EditableSwipeCard(
+        itemLabel = item.name,
         Modifier.fillMaxWidth().padding(horizontal = 20.dp),
-        onClick = onClick,
+        selectionMode = selectionMode,
+        selected = selected,
+        onSelectionChange = onSelectionChange,
+        onOpen = onClick,
+        onEdit = onEdit,
+        onDelete = onDelete,
         containerColor = Color.White,
     ) {
         Surface(shape = RoundedCornerShape(50), color = Color(0xFFE9EEF2)) {

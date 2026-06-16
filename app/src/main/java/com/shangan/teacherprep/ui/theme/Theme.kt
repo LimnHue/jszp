@@ -54,10 +54,10 @@ fun TeacherPrepTheme(
     val systemDensity = LocalDensity.current
     BoxWithConstraints {
         val automaticScale = when {
-            maxWidth < 360.dp -> 0.94f
-            maxWidth < 480.dp -> 1f
-            maxWidth < 600.dp -> 1.03f
-            else -> 1.08f
+            maxWidth < 360.dp -> 0.88f
+            maxWidth < 480.dp -> 0.94f
+            maxWidth < 600.dp -> 0.98f
+            else -> 1.02f
         }
         val selectedUiScale = uiScale.coerceIn(0.75f, 1.20f)
         val selectedFontScale = fontScale.coerceIn(0.80f, 1.20f)

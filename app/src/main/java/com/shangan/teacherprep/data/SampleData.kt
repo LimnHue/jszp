@@ -4,6 +4,7 @@ object SampleData {
     fun create(): AppData {
         val scope = LibraryScope()
         val scopeKey = scope.key
+        val sharedScopeKey = SharedLibrary.key
         return AppData(
             preferences = AppPreferences(
                 selectedScope = scope,
@@ -62,7 +63,7 @@ object SampleData {
             ),
             structuredQuestions = listOf(
                 StructuredQuestion(
-                    scopeKey = scopeKey,
+                    scopeKey = sharedScopeKey,
                     category = "教育教学",
                     question = "有学生在课堂上故意扰乱纪律，你会怎么办？",
                     answerSections = listOf(
@@ -73,7 +74,7 @@ object SampleData {
                     ),
                 ),
                 StructuredQuestion(
-                    scopeKey = scopeKey,
+                    scopeKey = sharedScopeKey,
                     category = "应急应变",
                     question = "公开课上多媒体设备突然故障，你如何处理？",
                     answerSections = listOf(
@@ -84,7 +85,7 @@ object SampleData {
             ),
             templates = listOf(
                 AnswerTemplate(
-                    scopeKey = scopeKey,
+                    scopeKey = sharedScopeKey,
                     category = "导入语",
                     name = "课堂导入万能模板",
                     summary = "创设情境 · 激发兴趣",
@@ -92,7 +93,7 @@ object SampleData {
                     module = "试讲",
                 ),
                 AnswerTemplate(
-                    scopeKey = scopeKey,
+                    scopeKey = sharedScopeKey,
                     category = "过渡语",
                     name = "文本赏析过渡语",
                     summary = "由内容走向语言",
@@ -100,7 +101,7 @@ object SampleData {
                     module = "试讲",
                 ),
                 AnswerTemplate(
-                    scopeKey = scopeKey,
+                    scopeKey = sharedScopeKey,
                     category = "答题框架",
                     name = "应急应变答题框架",
                     summary = "态度 · 原因 · 措施",
